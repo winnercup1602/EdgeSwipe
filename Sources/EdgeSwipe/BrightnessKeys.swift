@@ -5,20 +5,14 @@ import IOKit.hidsystem
 import PrivateMac
 
 enum BrightnessKeys {
-    private static let vorssaintID = "com.vorssaint.utils"
-
-    // The event is the same brightness-key press that Vorssaint already
-    // handles. EdgeSwipe does not also write the display after posting it.
-    static func post(_ direction: Direction, on display: CGDirectDisplayID, builtIn: Bool,
+    // Ordinary brightness keys cannot address an arbitrary external monitor.
+    static func post(_ direction: Direction, on display: CGDirectDisplayID,
                      whileValid: () -> Bool = { true }) -> Bool {
         DispatchQueue.main.sync {
             guard whileValid(), CGPreflightPostEventAccess(),
-                  !NSRunningApplication.runningApplications(withBundleIdentifier: vorssaintID).isEmpty,
+                  CGDisplayIsBuiltin(display) != 0,
                   let point = CGEvent(source: nil)?.location,
                   DisplayInfo.id(at: point) == display else { return false }
-
-            guard builtIn || UserDefaults(suiteName: vorssaintID)?.bool(forKey: "brightnessKeysEnabled") == true
-            else { return false }
 
             let key = direction == .up ? NX_KEYTYPE_BRIGHTNESS_UP : NX_KEYTYPE_BRIGHTNESS_DOWN
             func event(_ state: Int32) -> CGEvent? {

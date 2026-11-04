@@ -15,7 +15,7 @@ This repository is available as a **source preview**. The signed installer will 
 | Mac and trackpad | Apple Silicon. Tested on an M2 MacBook Air running macOS 27.2, with its built-in trackpad and a Bluetooth Magic Trackpad. |
 | Brightness | MacBook display and external displays with a usable hardware brightness path. Direct DDC/CI was tested with an LG HDR 4K monitor. |
 | DisplayLink | Requires DisplayLink Manager to report a valid hardware brightness value. The Dell P2723D was adjustable on some connections or sessions and unavailable on others with the same setup. |
-| Brightness feedback | When available, Vorssaint handles the native brightness-key feedback on supported routes. Enable its pointer-following brightness keys for external monitors. |
+| Brightness feedback | The MacBook display uses standard macOS brightness-key events when available. External brightness uses the selected monitor's hardware controls, so the macOS indicator may not appear. |
 | Audio | The default audio device must expose a writable system volume. |
 
 The project builds with a macOS 14 deployment target. The table lists the hardware and OS verified in use. Global touch coordinates, per-device haptics, and some brightness routes use undocumented macOS interfaces and may need updates after OS changes.
@@ -43,4 +43,4 @@ To make a local test installer, run `./build-dmg.sh --local`. The local image co
 
 Touch frames are processed locally for gesture recognition. The app uses local preferences and system logs, and communicates with DisplayLink Manager through local notifications. EdgeSwipe contains no account, telemetry, or network client.
 
-The source is licensed under [MIT](LICENSE). The [AppleSiliconDDC MIT notice](Assets/AppleSiliconDDC-LICENSE.txt) accompanies the app. The DDC/CI implementation references [AppleSiliconDDC](https://github.com/waydabber/AppleSiliconDDC). [EdgePad](https://github.com/forkiron/EdgePad) and [Mac Trackpad Wizard](https://github.com/jasonhejiahuan/Mac-Trackpad-Wizard) are references for the macOS multitouch and actuator interfaces. [Vorssaint](https://github.com/vorssaint/vorssaint-utils) is an optional separate app.
+The source is licensed under [MIT](LICENSE). The [AppleSiliconDDC MIT notice](Assets/AppleSiliconDDC-LICENSE.txt) accompanies the app. The DDC/CI implementation references [AppleSiliconDDC](https://github.com/waydabber/AppleSiliconDDC). [EdgePad](https://github.com/forkiron/EdgePad) and [Mac Trackpad Wizard](https://github.com/jasonhejiahuan/Mac-Trackpad-Wizard) are references for the macOS multitouch and actuator interfaces.

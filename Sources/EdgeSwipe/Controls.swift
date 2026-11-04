@@ -8,7 +8,7 @@ enum ControlFailure: Error, CustomStringConvertible {
     case audioUnavailable
     case displayUnavailable(String)
     case brightnessKeyUnconfirmed
-    case brightnessKeyOutOfSync
+    case unexpectedBrightnessStep
     case targetChanged
     case cancelled
     case system(OSStatus)
@@ -18,7 +18,7 @@ enum ControlFailure: Error, CustomStringConvertible {
         case .audioUnavailable: return "기본 출력 장치의 볼륨을 조절할 수 없음"
         case .displayUnavailable(let name): return "\(name) 백라이트 경로 없음"
         case .brightnessKeyUnconfirmed: return "밝기 키 입력 후 백라이트 변경을 확인하지 못함"
-        case .brightnessKeyOutOfSync: return "Vorssaint 밝기 값이 실제 화면과 달라 이전 밝기로 복원함"
+        case .unexpectedBrightnessStep: return "밝기 키가 예상 범위를 벗어나 이전 밝기로 복원함"
         case .targetChanged: return "조절 대상이 바뀜"
         case .cancelled: return "조절 취소됨"
         case .system(let status): return "시스템 호출 실패 (\(status))"
@@ -173,13 +173,6 @@ struct BrightnessScreen {
         if case .unavailable = backend { return false }
         return true
     }
-
-    var acceptsBrightnessKey: Bool {
-        switch backend {
-        case .native, .ddc: return true
-        case .displayLink, .unavailable: return false
-        }
-    }
 }
 
 // The serial control queue owns the sample cache. Each gesture reads fresh
@@ -238,34 +231,33 @@ final class BrightnessStroke {
         return try Adjustment.apply(.brightness, direction, read: { current }) { level in
             guard whileValid() else { throw ControlFailure.cancelled }
             // A partial downward step at the brightness floor is written directly.
-            if screen.acceptsBrightnessKey,
+            if case .native = screen.backend,
                direction == .up || current - level >= Control.stepSize - 0.0001,
-               BrightnessKeys.post(direction, on: screen.info.id, builtIn: screen.info.builtIn,
-                                   whileValid: whileValid) {
-                return try confirmKeyChange(from: current, to: level)
+               BrightnessKeys.post(direction, on: screen.info.id, whileValid: whileValid) {
+                return try confirmKeyChange(from: current, direction: direction)
             }
             guard whileValid() else { throw ControlFailure.cancelled }
             return try write(level)
         }
     }
 
-    private func confirmKeyChange(from current: Double, to expected: Double) throws -> Double {
-        // A write-only route may have a cached level different from the
-        // panel. Verify the size of the step and undo an unexpected jump.
+    private func confirmKeyChange(from current: Double, direction: Direction) throws -> Double {
+        // macOS can snap off-grid levels to the next keyboard step.
         var last = current
         for _ in 0..<3 {
             Thread.sleep(forTimeInterval: 0.04)
-            sample = nil
             if let actual = try? read() {
                 last = actual
-                if abs(actual - current) > 0.001, abs(actual - expected) <= 0.012 {
+                let delta = (actual - current) * Double(direction.rawValue)
+                if delta > 0.001, delta <= Control.stepSize + 0.012,
+                   actual >= Control.brightness.minimum - 0.0001 {
                     return actual
                 }
             }
         }
         if abs(last - current) > 0.001 {
             _ = try write(current)
-            throw ControlFailure.brightnessKeyOutOfSync
+            throw ControlFailure.unexpectedBrightnessStep
         }
         throw ControlFailure.brightnessKeyUnconfirmed
     }
