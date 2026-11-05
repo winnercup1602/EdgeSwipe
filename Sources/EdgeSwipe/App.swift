@@ -47,6 +47,7 @@ final class EdgeSwipeApp: NSObject, NSApplicationDelegate {
     private let trackpads = Trackpads()
     private let brightness = NativeBrightness()
     private let displayLink = DisplayLinkBrightness()
+    private let brightnessFeedback = SystemBrightnessFeedback()
     private let pointer = PointerFreeze()
     private let controls = DispatchQueue(label: "io.github.winnercup1602.edgeswipe.controls", qos: .userInteractive)
     private let logger = Logger(subsystem: "io.github.winnercup1602.edgeswipe", category: "app")
@@ -73,6 +74,9 @@ final class EdgeSwipeApp: NSObject, NSApplicationDelegate {
         item.button?.setAccessibilityLabel("EdgeSwipe")
         item.button?.toolTip = "EdgeSwipe"
         statusItem = item
+        brightnessFeedback.onFailure = { [weak self] in
+            self?.report(ControlFailure.brightnessFeedbackUnavailable, for: .brightness)
+        }
         trackpads.onFrame = { [weak self] device, contact in self?.receive(device, contact) }
         trackpads.onChanged = { [weak self] in self?.trackpadsChanged() }
         displayLink.onAvailabilityChange = { [weak self] in
@@ -217,6 +221,9 @@ final class EdgeSwipeApp: NSObject, NSApplicationDelegate {
         case .success(let change):
             if controlErrors.removeValue(forKey: active.control) != nil { updateMenu() }
             if let change {
+                if let display = active.target?.feedbackDisplay {
+                    brightnessFeedback.show(change.level, on: display)
+                }
                 if stillTracking { trackpads.tick(on: active.device, gain: change.hapticGain) }
                 logger.info("Applied step to \(active.control == .volume ? "volume" : "brightness", privacy: .public), level \(change.level, privacy: .public)")
             } else if stillTracking {

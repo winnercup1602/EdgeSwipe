@@ -8,6 +8,7 @@ enum ControlFailure: Error, CustomStringConvertible {
     case audioUnavailable
     case displayUnavailable(String)
     case brightnessKeyUnconfirmed
+    case brightnessFeedbackUnavailable
     case unexpectedBrightnessStep
     case targetChanged
     case cancelled
@@ -18,6 +19,7 @@ enum ControlFailure: Error, CustomStringConvertible {
         case .audioUnavailable: return "기본 출력 장치의 볼륨을 조절할 수 없음"
         case .displayUnavailable(let name): return "\(name) 백라이트 경로 없음"
         case .brightnessKeyUnconfirmed: return "밝기 키 입력 후 백라이트 변경을 확인하지 못함"
+        case .brightnessFeedbackUnavailable: return "macOS 밝기 변경 표시를 열 수 없음"
         case .unexpectedBrightnessStep: return "밝기 키가 예상 범위를 벗어나 이전 밝기로 복원함"
         case .targetChanged: return "조절 대상이 바뀜"
         case .cancelled: return "조절 취소됨"
@@ -186,6 +188,11 @@ final class BrightnessStroke {
         self.screen = screen
     }
 
+    var feedbackDisplay: CGDirectDisplayID? {
+        if case .native = screen.backend { return nil }
+        return screen.info.id
+    }
+
     func read() throws -> Double {
         guard CGDisplayIsActive(screen.info.id) != 0 else { throw ControlFailure.targetChanged }
         switch screen.backend {
@@ -266,6 +273,11 @@ final class BrightnessStroke {
 enum ControlTarget {
     case volume(AudioOutput)
     case brightness(BrightnessStroke)
+
+    var feedbackDisplay: CGDirectDisplayID? {
+        guard case .brightness(let stroke) = self else { return nil }
+        return stroke.feedbackDisplay
+    }
 
     func adjust(_ direction: Direction, whileValid: () -> Bool) throws -> LevelChange? {
         switch self {
