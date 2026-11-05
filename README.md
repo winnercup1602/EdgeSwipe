@@ -15,7 +15,7 @@ This repository is available as a **source preview**. The signed installer will 
 | Mac and trackpad | Apple Silicon. Tested on an M2 MacBook Air running macOS 27.2, with its built-in trackpad and a Bluetooth Magic Trackpad. |
 | Brightness | MacBook display and external displays with a usable hardware brightness path. Direct DDC/CI was tested with an LG HDR 4K monitor. |
 | DisplayLink | Requires DisplayLink Manager to report a valid hardware brightness value. The Dell P2723D was adjustable on some connections or sessions and unavailable on others with the same setup. |
-| Brightness feedback | The MacBook display uses standard macOS brightness-key events when available. Confirmed external brightness changes request the macOS brightness indicator on the selected display. |
+| Brightness feedback | Confirmed changes request the macOS brightness indicator on the selected display. On macOS 27, the built-in screen uses the Control Center banner. External screens and earlier macOS versions use the system's classic brightness indicator. |
 | Audio | The default audio device must expose a writable system volume. |
 
 The project builds with a macOS 14 deployment target. The table lists the hardware and OS verified in use. Global touch coordinates, per-device haptics, and some brightness routes use undocumented macOS interfaces and may need updates after OS changes.

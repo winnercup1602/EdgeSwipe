@@ -143,15 +143,33 @@ public final class DisplayLinkBrightness {
     }
 
     private func observe<T: Decodable>(_ suffix: String, receive: @escaping (T) -> Void) -> NSObjectProtocol {
-        center.addObserver(forName: .init("com.displaylink." + suffix), object: nil, queue: .main) { note in
+        let observer = ImmediateDisplayLinkObserver { note in
             guard let payload = note.object as? String,
                   let decoded = try? JSONDecoder().decode(T.self, from: Data(payload.utf8)) else { return }
             receive(decoded)
         }
+        // A background menu-bar app can have distributed notifications
+        // suspended. Hardware replies must reach an in-flight request now.
+        center.addObserver(observer, selector: #selector(ImmediateDisplayLinkObserver.receive(_:)),
+                           name: .init("com.displaylink." + suffix), object: nil,
+                           suspensionBehavior: .deliverImmediately)
+        return observer
     }
 
     private func post(_ suffix: String, object: String? = nil) {
         center.postNotificationName(.init("com.displaylink." + suffix), object: object,
                                     userInfo: nil, deliverImmediately: true)
+    }
+}
+
+private final class ImmediateDisplayLinkObserver: NSObject {
+    private let handle: (Notification) -> Void
+
+    init(handle: @escaping (Notification) -> Void) {
+        self.handle = handle
+    }
+
+    @objc func receive(_ note: Notification) {
+        DispatchQueue.main.async { self.handle(note) }
     }
 }

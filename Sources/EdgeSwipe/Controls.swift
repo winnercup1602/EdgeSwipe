@@ -7,9 +7,7 @@ import PrivateMac
 enum ControlFailure: Error, CustomStringConvertible {
     case audioUnavailable
     case displayUnavailable(String)
-    case brightnessKeyUnconfirmed
     case brightnessFeedbackUnavailable
-    case unexpectedBrightnessStep
     case targetChanged
     case cancelled
     case system(OSStatus)
@@ -18,9 +16,7 @@ enum ControlFailure: Error, CustomStringConvertible {
         switch self {
         case .audioUnavailable: return "기본 출력 장치의 볼륨을 조절할 수 없음"
         case .displayUnavailable(let name): return "\(name) 백라이트 경로 없음"
-        case .brightnessKeyUnconfirmed: return "밝기 키 입력 후 백라이트 변경을 확인하지 못함"
         case .brightnessFeedbackUnavailable: return "macOS 밝기 변경 표시를 열 수 없음"
-        case .unexpectedBrightnessStep: return "밝기 키가 예상 범위를 벗어나 이전 밝기로 복원함"
         case .targetChanged: return "조절 대상이 바뀜"
         case .cancelled: return "조절 취소됨"
         case .system(let status): return "시스템 호출 실패 (\(status))"
@@ -188,10 +184,7 @@ final class BrightnessStroke {
         self.screen = screen
     }
 
-    var feedbackDisplay: CGDirectDisplayID? {
-        if case .native = screen.backend { return nil }
-        return screen.info.id
-    }
+    var displayID: CGDirectDisplayID { screen.info.id }
 
     func read() throws -> Double {
         guard CGDisplayIsActive(screen.info.id) != 0 else { throw ControlFailure.targetChanged }
@@ -218,7 +211,7 @@ final class BrightnessStroke {
         switch screen.backend {
         case .native(let native):
             try native.write(level, display: screen.info.id)
-            return level
+            return try native.read(display: screen.info.id)
         case .ddc(let ddc):
             let previous = try sample ?? ddc.read()
             let actual = try ddc.write(level, from: previous)
@@ -237,36 +230,8 @@ final class BrightnessStroke {
         let current = try read()
         return try Adjustment.apply(.brightness, direction, read: { current }) { level in
             guard whileValid() else { throw ControlFailure.cancelled }
-            // A partial downward step at the brightness floor is written directly.
-            if case .native = screen.backend,
-               direction == .up || current - level >= Control.stepSize - 0.0001,
-               BrightnessKeys.post(direction, on: screen.info.id, whileValid: whileValid) {
-                return try confirmKeyChange(from: current, direction: direction)
-            }
-            guard whileValid() else { throw ControlFailure.cancelled }
             return try write(level)
         }
-    }
-
-    private func confirmKeyChange(from current: Double, direction: Direction) throws -> Double {
-        // macOS can snap off-grid levels to the next keyboard step.
-        var last = current
-        for _ in 0..<3 {
-            Thread.sleep(forTimeInterval: 0.04)
-            if let actual = try? read() {
-                last = actual
-                let delta = (actual - current) * Double(direction.rawValue)
-                if delta > 0.001, delta <= Control.stepSize + 0.012,
-                   actual >= Control.brightness.minimum - 0.0001 {
-                    return actual
-                }
-            }
-        }
-        if abs(last - current) > 0.001 {
-            _ = try write(current)
-            throw ControlFailure.unexpectedBrightnessStep
-        }
-        throw ControlFailure.brightnessKeyUnconfirmed
     }
 }
 
@@ -276,7 +241,7 @@ enum ControlTarget {
 
     var feedbackDisplay: CGDirectDisplayID? {
         guard case .brightness(let stroke) = self else { return nil }
-        return stroke.feedbackDisplay
+        return stroke.displayID
     }
 
     func adjust(_ direction: Direction, whileValid: () -> Bool) throws -> LevelChange? {
