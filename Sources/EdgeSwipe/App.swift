@@ -14,6 +14,22 @@ private final class OperationLease {
 
 final class EdgeSwipeApp: NSObject, NSApplicationDelegate {
     private static let stepInterval: TimeInterval = 0.04
+    private static let statusIcon: NSImage = {
+        let image = NSImage(size: NSSize(width: 18, height: 18), flipped: false) { _ in
+            NSColor.black.set()
+            let outline = NSBezierPath(roundedRect: NSRect(x: 1, y: 3, width: 16, height: 12),
+                                       xRadius: 2.5, yRadius: 2.5)
+            outline.lineWidth = 1.5
+            outline.stroke()
+            NSBezierPath(roundedRect: NSRect(x: 3.5, y: 5.5, width: 1.5, height: 7),
+                         xRadius: 0.75, yRadius: 0.75).fill()
+            NSBezierPath(roundedRect: NSRect(x: 13, y: 5.5, width: 1.5, height: 7),
+                         xRadius: 0.75, yRadius: 0.75).fill()
+            return true
+        }
+        image.isTemplate = true
+        return image
+    }()
 
     private struct Session {
         let device: UInt64
@@ -52,8 +68,9 @@ final class EdgeSwipeApp: NSObject, NSApplicationDelegate {
     private var latestBrightnessStroke: OperationLease?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        item.button?.image = NSImage(systemSymbolName: "trackpad", accessibilityDescription: "EdgeSwipe")
+        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        item.button?.image = Self.statusIcon
+        item.button?.setAccessibilityLabel("EdgeSwipe")
         item.button?.toolTip = "EdgeSwipe"
         statusItem = item
         trackpads.onFrame = { [weak self] device, contact in self?.receive(device, contact) }
