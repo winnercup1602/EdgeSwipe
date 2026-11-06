@@ -7,55 +7,43 @@ import Foundation
                    locked: Bool)
 }
 
-// Apple's OSD service presents an indicator without sending a brightness key
-// or changing a display. All connection state belongs to the main queue.
+// Apple's OSD service presents a brightness indicator on a selected display.
+// All connection state belongs to the main queue.
 public final class SystemBrightnessFeedback {
-    private enum Endpoint: String {
-        case banner = "com.apple.SystemBanner"
-        case classic = "com.apple.OSDUIHelper"
-    }
-
-    private var connections: [Endpoint: NSXPCConnection] = [:]
+    private var connection: NSXPCConnection?
     public var onFailure: () -> Void = {}
 
     public init() {}
 
-    deinit { connections.values.forEach { $0.invalidate() } }
+    deinit { connection?.invalidate() }
 
     public func show(_ level: Double, on display: CGDirectDisplayID) {
         dispatchPrecondition(condition: .onQueue(.main))
         guard level.isFinite, (0...1).contains(level), CGDisplayIsActive(display) != 0 else { return }
-        let endpoint: Endpoint
-        if #available(macOS 27, *), CGDisplayIsBuiltin(display) != 0 {
-            endpoint = .banner
-        } else {
-            endpoint = .classic
-        }
-
         let service: NSXPCConnection
-        if let connection = connections[endpoint] {
+        if let connection {
             service = connection
         } else {
-            service = NSXPCConnection(machServiceName: endpoint.rawValue, options: [])
+            service = NSXPCConnection(machServiceName: "com.apple.OSDUIHelper", options: [])
             service.remoteObjectInterface = NSXPCInterface(with: BrightnessOSDService.self)
-            service.interruptionHandler = { [weak self, weak service] in self?.failed(service, at: endpoint) }
-            service.invalidationHandler = { [weak self, weak service] in self?.failed(service, at: endpoint) }
-            connections[endpoint] = service
+            service.interruptionHandler = { [weak self, weak service] in self?.failed(service) }
+            service.invalidationHandler = { [weak self, weak service] in self?.failed(service) }
+            connection = service
             service.resume()
         }
 
         let proxy = service.remoteObjectProxyWithErrorHandler { [weak self, weak service] _ in
-            self?.failed(service, at: endpoint)
+            self?.failed(service)
         }
-        guard let osd = proxy as? BrightnessOSDService else { failed(service, at: endpoint); return }
+        guard let osd = proxy as? BrightnessOSDService else { failed(service); return }
         osd.showImage(1, onDisplayID: display, priority: 500, msecUntilFade: 1000,
                       filledChiclets: UInt32((level * 100).rounded()), totalChiclets: 100, locked: false)
     }
 
-    private func failed(_ service: NSXPCConnection?, at endpoint: Endpoint) {
+    private func failed(_ service: NSXPCConnection?) {
         DispatchQueue.main.async { [weak self] in
-            guard let self, let service, self.connections[endpoint] === service else { return }
-            self.connections.removeValue(forKey: endpoint)
+            guard let self, let service, self.connection === service else { return }
+            self.connection = nil
             service.interruptionHandler = nil
             service.invalidationHandler = nil
             service.invalidate()
