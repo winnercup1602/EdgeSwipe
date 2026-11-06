@@ -6,10 +6,8 @@ import PrivateMac
 
 enum ControlFailure: Error, CustomStringConvertible {
     case audioUnavailable
-    case displayUnavailable(String)
+    case brightnessKeyUnavailable
     case brightnessKeyUnconfirmed
-    case unexpectedBrightnessStep
-    case brightnessFeedbackUnavailable
     case targetChanged
     case cancelled
     case system(OSStatus)
@@ -17,10 +15,8 @@ enum ControlFailure: Error, CustomStringConvertible {
     var description: String {
         switch self {
         case .audioUnavailable: return "기본 출력 장치의 볼륨을 조절할 수 없음"
-        case .displayUnavailable(let name): return "\(name) 백라이트 경로 없음"
+        case .brightnessKeyUnavailable: return "밝기 키 입력을 사용할 수 없음 · 손쉬운 사용 권한 확인"
         case .brightnessKeyUnconfirmed: return "시스템 밝기 키 입력 후 변경을 확인하지 못함"
-        case .unexpectedBrightnessStep: return "시스템 밝기 키가 예상 범위를 벗어나 이전 밝기로 복원함"
-        case .brightnessFeedbackUnavailable: return "macOS 밝기 변경 표시를 열 수 없음"
         case .targetChanged: return "조절 대상이 바뀜"
         case .cancelled: return "조절 취소됨"
         case .system(let status): return "시스템 호출 실패 (\(status))"
@@ -114,153 +110,39 @@ struct AudioOutput {
     }
 }
 
-struct BrightnessScreen {
-    enum Backend {
-        case native(NativeBrightness)
-        case ddc(DDCBrightness)
-        case displayLink(DisplayLinkBrightness, DisplayLinkBrightness.Screen)
-        case unavailable
-    }
-
-    let info: DisplayInfo
-    let backend: Backend
-
-    private init(id: CGDirectDisplayID, native: NativeBrightness?) {
-        let info = DisplayInfo(id: id)
-        self.info = info
-        if info.builtIn, let native, (try? native.read(display: id)) != nil {
-            backend = .native(native)
-        } else if let location = info.location,
-                  let ddc = DDCBrightness(displayLocation: location), (try? ddc.read()) != nil {
-            backend = .ddc(ddc)
-        } else {
-            backend = .unavailable
-        }
-    }
-
-    private init(info: DisplayInfo, backend: Backend) {
-        self.info = info
-        self.backend = backend
-    }
-
-    static func detect(
-        native: NativeBrightness?, displayLink: DisplayLinkBrightness, continuing: () -> Bool = { true }
-    ) -> [BrightnessScreen] {
-        var detected: [BrightnessScreen] = []
-        for id in DisplayInfo.activeIDs() {
-            guard continuing() else { return [] }
-            detected.append(BrightnessScreen(id: id, native: native))
-        }
-        guard detected.contains(where: { !$0.info.builtIn && !$0.supported }), continuing() else { return detected }
-        let linked = displayLink.discover()
-        return detected.map { screen in
-            guard !screen.info.builtIn, !screen.supported,
-                  let target = linked.first(where: {
-                      $0.displayID == screen.info.id && $0.name == screen.info.name
-                  }) else { return screen }
-            return BrightnessScreen(info: screen.info, backend: .displayLink(displayLink, target))
-        }
-    }
-
-    var status: String {
-        switch backend {
-        case .native: return "내장 밝기 준비됨"
-        case .ddc: return "DDC/CI 백라이트 준비됨"
-        case .displayLink: return "DisplayLink 백라이트 준비됨"
-        case .unavailable: return "백라이트 경로 없음"
-        }
-    }
-
-    var supported: Bool {
-        if case .unavailable = backend { return false }
-        return true
-    }
-}
-
-// The serial control queue owns the sample cache. Each gesture reads fresh
-// hardware state once and keeps the most recent verified DDC write thereafter.
-final class BrightnessStroke {
-    private let screen: BrightnessScreen
-    private var sample: DDCBrightness.Reading?
-    private var linkedLevel: Double?
-    private var usedSystemKeys = false
-
-    init(screen: BrightnessScreen) {
-        self.screen = screen
-    }
-
-    var feedbackDisplay: CGDirectDisplayID? { usedSystemKeys ? nil : screen.info.id }
+struct BuiltInBrightness {
+    let display: CGDirectDisplayID
+    let native: NativeBrightness
 
     func read() throws -> Double {
-        guard CGDisplayIsActive(screen.info.id) != 0 else { throw ControlFailure.targetChanged }
-        switch screen.backend {
-        case .native(let native):
-            return try native.read(display: screen.info.id)
-        case .ddc(let ddc):
-            if let sample { return sample.level }
-            let current = try ddc.read()
-            sample = current
-            return current.level
-        case let .displayLink(bridge, target):
-            if let linkedLevel { return linkedLevel }
-            let level = try bridge.read(target)
-            linkedLevel = level
-            return level
-        case .unavailable:
-            throw ControlFailure.displayUnavailable(screen.info.name)
-        }
-    }
-
-    func write(_ level: Double) throws -> Double {
-        guard CGDisplayIsActive(screen.info.id) != 0 else { throw ControlFailure.targetChanged }
-        switch screen.backend {
-        case .native(let native):
-            try native.write(level, display: screen.info.id)
-            return try native.read(display: screen.info.id)
-        case .ddc(let ddc):
-            let previous = try sample ?? ddc.read()
-            let actual = try ddc.write(level, from: previous)
-            sample = actual
-            return actual.level
-        case let .displayLink(bridge, target):
-            let actual = try bridge.write(level, to: target)
-            linkedLevel = actual
-            return actual
-        case .unavailable:
-            throw ControlFailure.displayUnavailable(screen.info.name)
-        }
+        guard BuiltInDisplay.activeID == display else { throw ControlFailure.targetChanged }
+        return try native.read(display: display)
     }
 
     func adjust(_ direction: Direction, whileValid: () -> Bool) throws -> LevelChange? {
-        usedSystemKeys = false
         let current = try read()
-        return try Adjustment.apply(.brightness, direction, read: { current }) { level in
-            if case .native = screen.backend,
-               NativeBrightnessKeys.post(increase: direction == .up, on: screen.info.id,
-                                         whileValid: whileValid) {
-                let actual = try confirmSystemKey(from: current, direction: direction)
-                usedSystemKeys = true
-                return actual
+        return try Adjustment.apply(.brightness, direction, read: { current }) { _ in
+            guard NativeBrightnessKeys.post(increase: direction == .up, on: display,
+                                            whileValid: whileValid) else {
+                guard whileValid() else { throw ControlFailure.cancelled }
+                guard BuiltInDisplay.activeID == display else { throw ControlFailure.targetChanged }
+                throw ControlFailure.brightnessKeyUnavailable
             }
-            guard whileValid() else { throw ControlFailure.cancelled }
-            return try write(level)
+            return try confirmSystemKey(from: current, direction: direction, whileValid: whileValid)
         }
     }
 
-    private func confirmSystemKey(from current: Double, direction: Direction) throws -> Double {
-        var last = current
+    private func confirmSystemKey(from current: Double, direction: Direction,
+                                  whileValid: () -> Bool) throws -> Double {
         for _ in 0..<12 {
             Thread.sleep(forTimeInterval: 0.02)
-            if let actual = try? read() {
-                last = actual
+            guard whileValid() else { throw ControlFailure.cancelled }
+            guard BuiltInDisplay.activeID == display else { throw ControlFailure.targetChanged }
+            if let actual = try? native.read(display: display) {
                 let delta = (actual - current) * Double(direction.rawValue)
                 if delta > 0.001, delta <= Control.stepSize + 0.012,
                    actual >= Control.brightness.minimum - 0.0001 { return actual }
             }
-        }
-        if abs(last - current) > 0.001 {
-            _ = try write(current)
-            throw ControlFailure.unexpectedBrightnessStep
         }
         throw ControlFailure.brightnessKeyUnconfirmed
     }
@@ -268,12 +150,7 @@ final class BrightnessStroke {
 
 enum ControlTarget {
     case volume(AudioOutput)
-    case brightness(BrightnessStroke)
-
-    var feedbackDisplay: CGDirectDisplayID? {
-        guard case .brightness(let stroke) = self else { return nil }
-        return stroke.feedbackDisplay
-    }
+    case brightness(BuiltInBrightness)
 
     func adjust(_ direction: Direction, whileValid: () -> Bool) throws -> LevelChange? {
         switch self {
@@ -283,8 +160,8 @@ enum ControlTarget {
                 try audio.write(level)
                 return level
             }
-        case .brightness(let stroke):
-            return try stroke.adjust(direction, whileValid: whileValid)
+        case .brightness(let brightness):
+            return try brightness.adjust(direction, whileValid: whileValid)
         }
     }
 }

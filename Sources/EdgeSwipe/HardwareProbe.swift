@@ -1,12 +1,16 @@
 #if DEBUG
 import ApplicationServices
-import CoreGraphics
+import AppKit
 import Foundation
 import GestureCore
 import PrivateMac
 import os
 
 func runHardwareProbe(roundTrip: Bool) -> Int32 {
+    NSApplication.shared.setActivationPolicy(.prohibited)
+    let activity = ProcessInfo.processInfo.beginActivity(options: [.userInitiated, .idleDisplaySleepDisabled],
+                                                        reason: "Verify EdgeSwipe hardware controls")
+    defer { ProcessInfo.processInfo.endActivity(activity) }
     var failures = 0
     let trackpads = Trackpads()
     var frames: [UInt64: Int] = [:]
@@ -23,12 +27,11 @@ func runHardwareProbe(roundTrip: Bool) -> Int32 {
     }
     trackpads.stop()
 
-    let manager = DisplayLinkBrightness()
     let hardwareResult = OSAllocatedUnfairLock(initialState: 0)
     let done = DispatchGroup()
     done.enter()
     DispatchQueue.global(qos: .userInitiated).async {
-        let errors = probeControls(manager: manager, roundTrip: roundTrip)
+        let errors = probeControls(roundTrip: roundTrip)
         hardwareResult.withLock { $0 = errors }
         done.leave()
     }
@@ -40,78 +43,91 @@ func runHardwareProbe(roundTrip: Bool) -> Int32 {
     return failures == 0 ? 0 : 1
 }
 
-private func probeControls(manager: DisplayLinkBrightness, roundTrip: Bool) -> Int {
+private func probeControls(roundTrip: Bool) -> Int {
     var failures = 0
-    let native = NativeBrightness()
-    let screens = BrightnessScreen.detect(native: native, displayLink: manager)
-    for screen in screens {
-        let bounds = CGDisplayBounds(screen.info.id)
-        let center = CGPoint(x: bounds.midX, y: bounds.midY)
-        let selected = DisplayInfo.id(at: center) == screen.info.id
-        print("\(screen.info.name): \(screen.status), cursor target \(selected ? "confirmed" : "ambiguous")")
-        if !selected { failures += 1 }
-    }
 
     do {
         let audio = try AudioOutput.current()
         let current = try audio.read()
         print("volume read: \(current)")
         if roundTrip, current > 0 {
-            try checkRoundTrip("volume", control: .volume, original: current, readFresh: audio.read) { level in
-                try audio.write(level)
-                return level
-            }
+            try checkRoundTrip("volume", original: current, readFresh: audio.read,
+                               adjust: { try ControlTarget.volume(audio).adjust($0, whileValid: { true }) },
+                               restore: audio.write)
         }
     } catch {
         print("volume probe failed: \(error)")
         failures += 1
     }
 
-    let supported = screens.filter(\.supported)
-    for screen in supported {
-        do {
-            let readFresh = { try BrightnessStroke(screen: screen).read() }
-            let current = try readFresh()
-            print("\(screen.info.name) brightness read: \(current)")
-            if roundTrip {
-                let peers = supported.filter { $0.info.id != screen.info.id }
-                let before = try peers.map { try BrightnessStroke(screen: $0).read() }
-                try checkRoundTrip(screen.info.name, control: .brightness, original: current,
-                                   readFresh: readFresh,
-                                   write: { try BrightnessStroke(screen: screen).write($0) }) {
-                    for (peer, level) in zip(peers, before) {
-                        guard abs(try BrightnessStroke(screen: peer).read() - level) < 0.0001 else {
-                            throw ControlFailure.targetChanged
-                        }
-                        print("  \(peer.info.name) stayed at \(level)")
-                    }
-                }
-            }
-        } catch {
-            print("\(screen.info.name) probe failed: \(error)")
-            failures += 1
+    do {
+        guard let display = BuiltInDisplay.activeID, let native = NativeBrightness() else {
+            print("brightness probe requires a MacBook with its built-in display only")
+            return failures + 1
         }
+        let brightness = BuiltInBrightness(display: display, native: native)
+        let current = try brightness.read()
+        print("MacBook brightness read: \(current)")
+        let onKeyStep = abs(current / Control.stepSize - (current / Control.stepSize).rounded()) < 0.0016
+        if roundTrip, current >= Control.brightness.minimum, onKeyStep {
+            try checkRoundTrip("brightness", original: current, readFresh: brightness.read,
+                               adjust: { try brightness.adjust($0, whileValid: { true }) },
+                               restore: { try restoreBrightness($0, using: brightness) })
+            try checkBrightnessCancellation(brightness)
+        } else if roundTrip {
+            print("brightness round-trip requires an initial system keyboard step")
+        }
+    } catch {
+        print("brightness probe failed: \(error)")
+        failures += 1
     }
     return failures
 }
 
+private func restoreBrightness(_ original: Double, using brightness: BuiltInBrightness) throws {
+    let actual = try brightness.read()
+    guard abs(actual - original) > 0.0001 else { return }
+    guard abs(actual - original) <= Control.stepSize + 0.012 else { throw ControlFailure.targetChanged }
+    let direction: Direction = actual < original ? .up : .down
+    guard try brightness.adjust(direction, whileValid: { true }) != nil else {
+        throw ControlFailure.brightnessKeyUnconfirmed
+    }
+}
+
+private func checkBrightnessCancellation(_ brightness: BuiltInBrightness) throws {
+    let original = try brightness.read()
+    let direction: Direction = original >= 0.5 ? .down : .up
+    var checks = 0
+    let result = Result {
+        try brightness.adjust(direction) {
+            checks += 1
+            return checks == 1
+        }
+    }
+    // An accepted key can finish after cancellation. Let it arrive before
+    // restoring through the same keyboard path used by the app.
+    Thread.sleep(forTimeInterval: 0.3)
+    try restoreBrightness(original, using: brightness)
+    guard abs(try brightness.read() - original) <= 0.0001 else { throw ControlFailure.system(-1) }
+    guard case .failure(ControlFailure.cancelled) = result else { throw ControlFailure.system(-1) }
+    print("brightness cancellation after accepted input: confirmed")
+}
+
 private func checkRoundTrip(
-    _ name: String, control: Control, original: Double,
-    readFresh: () throws -> Double, write: (Double) throws -> Double,
-    checkPeers: () throws -> Void = {}
+    _ name: String, original: Double, readFresh: () throws -> Double,
+    adjust: (Direction) throws -> LevelChange?, restore: (Double) throws -> Void
 ) throws {
     let direction: Direction = original >= 0.5 ? .down : .up
     let check = Result {
-        guard let step = try Adjustment.apply(control, direction, read: { original }, write: write) else {
+        guard let step = try adjust(direction) else {
             throw ControlFailure.system(-1)
         }
         Thread.sleep(forTimeInterval: 0.18)
         let actual = try readFresh()
         print("\(name) step: \(actual) (confirmed target \(step.level))")
         guard abs(actual - step.level) <= 0.04 else { throw ControlFailure.system(-1) }
-        try checkPeers()
     }
-    _ = try write(original)
+    try restore(original)
     Thread.sleep(forTimeInterval: 0.18)
     let restored = try readFresh()
     print("\(name) restored: \(restored)")

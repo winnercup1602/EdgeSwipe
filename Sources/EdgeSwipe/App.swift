@@ -46,8 +46,6 @@ final class EdgeSwipeApp: NSObject, NSApplicationDelegate {
 
     private let trackpads = Trackpads()
     private let brightness = NativeBrightness()
-    private let displayLink = DisplayLinkBrightness()
-    private let brightnessFeedback = SystemBrightnessFeedback()
     private let pointer = PointerFreeze()
     private let controls = DispatchQueue(label: "io.github.winnercup1602.edgeswipe.controls", qos: .userInteractive)
     private let logger = Logger(subsystem: "io.github.winnercup1602.edgeswipe", category: "app")
@@ -64,8 +62,7 @@ final class EdgeSwipeApp: NSObject, NSApplicationDelegate {
     private var inputMonitoringNeeded = false
     private var paused = UserDefaults.standard.bool(forKey: "paused")
     private var controlErrors: [Control: String] = [:]
-    private var screens: [CGDirectDisplayID: BrightnessScreen] = [:]
-    private var displayScan: OperationLease?
+    private var builtInDisplay: CGDirectDisplayID?
     private var latestBrightnessStroke: OperationLease?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -74,16 +71,8 @@ final class EdgeSwipeApp: NSObject, NSApplicationDelegate {
         item.button?.setAccessibilityLabel("EdgeSwipe")
         item.button?.toolTip = "EdgeSwipe"
         statusItem = item
-        brightnessFeedback.onFailure = { [weak self] in
-            self?.report(ControlFailure.brightnessFeedbackUnavailable, for: .brightness)
-        }
         trackpads.onFrame = { [weak self] device, contact in self?.receive(device, contact) }
         trackpads.onChanged = { [weak self] in self?.trackpadsChanged() }
-        displayLink.onAvailabilityChange = { [weak self] in
-            guard let self else { return }
-            self.endStroke()
-            self.refreshBrightnessScreens()
-        }
         pointer.onClick = { [weak self] in self?.endStroke() }
         pointer.onInterrupt = { [weak self] in
             self?.endStroke()
@@ -99,7 +88,6 @@ final class EdgeSwipeApp: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         permissionTimer?.invalidate()
-        displayScan?.cancel()
         cancelPendingBrightnessStep()
         endStroke()
         pointer.stop()
@@ -134,14 +122,13 @@ final class EdgeSwipeApp: NSObject, NSApplicationDelegate {
             guard !mouseButtonIsDown else { recognizers[device]?.cancel(); return }
             var started = Session(device: device, control: control, lastFrame: now)
             if control == .brightness {
-                guard let point = CGEvent(source: nil)?.location, let id = DisplayInfo.id(at: point),
-                      let selected = screens[id], selected.supported else {
+                guard let display = builtInDisplay, let brightness else {
                     recognizers[device]?.cancel()
                     return
                 }
                 cancelPendingBrightnessStep()
                 latestBrightnessStroke = started.lease
-                started.target = .brightness(BrightnessStroke(screen: selected))
+                started.target = .brightness(BuiltInBrightness(display: display, native: brightness))
             }
             session = started
             let timer = Timer(timeInterval: Self.stepInterval, repeats: true) { [weak self] _ in self?.pump() }
@@ -221,9 +208,6 @@ final class EdgeSwipeApp: NSObject, NSApplicationDelegate {
         case .success(let change):
             if controlErrors.removeValue(forKey: active.control) != nil { updateMenu() }
             if let change {
-                if let display = active.target?.feedbackDisplay {
-                    brightnessFeedback.show(change.level, on: display)
-                }
                 if stillTracking { trackpads.tick(on: active.device, gain: change.hapticGain) }
                 logger.info("Applied step to \(active.control == .volume ? "volume" : "brightness", privacy: .public), level \(change.level, privacy: .public)")
             } else if stillTracking {
@@ -287,7 +271,8 @@ final class EdgeSwipeApp: NSObject, NSApplicationDelegate {
         ) { [weak self] _ in
             self?.endStroke()
             self?.controlErrors.removeValue(forKey: .brightness)
-            self?.refreshBrightnessScreens()
+            self?.refreshBrightnessTarget()
+            self?.updateMenu()
         }
     }
 
@@ -297,33 +282,20 @@ final class EdgeSwipeApp: NSObject, NSApplicationDelegate {
             cancelPendingBrightnessStep()
             trackpads.stop()
             pointer.stop()
-            displayScan?.cancel()
-            displayScan = nil
-            screens.removeAll()
+            builtInDisplay = nil
         } else {
             trackpads.start()
-            refreshBrightnessScreens()
+            refreshBrightnessTarget()
         }
         checkPermission()
         updateMenu()
     }
 
-    private func refreshBrightnessScreens() {
-        displayScan?.cancel()
+    private func refreshBrightnessTarget() {
         cancelPendingBrightnessStep()
-        screens.removeAll()
-        guard !paused, suspension.isEmpty else { return }
-        let scan = OperationLease()
-        displayScan = scan
-        controls.async { [weak self, brightness, displayLink] in
-            let detected = BrightnessScreen.detect(native: brightness, displayLink: displayLink) { scan.valid }
-            let discovered = Dictionary(uniqueKeysWithValues: detected.map { ($0.info.id, $0) })
-            DispatchQueue.main.async { [weak self] in
-                guard let self, self.displayScan === scan else { return }
-                self.screens = discovered
-                self.updateMenu()
-            }
-        }
+        builtInDisplay = nil
+        guard !paused, suspension.isEmpty, brightness != nil else { return }
+        builtInDisplay = BuiltInDisplay.activeID
     }
 
     private func checkPermission() {
@@ -356,7 +328,7 @@ final class EdgeSwipeApp: NSObject, NSApplicationDelegate {
         menu.addItem(action(paused ? "다시 시작" : "일시정지", #selector(togglePause)))
         menu.addItem(.separator())
 
-        if !trusted {
+        if !trusted || !CGPreflightPostEventAccess() {
             menu.addItem(action("손쉬운 사용 권한 설정…", #selector(requestAccessibility)))
         } else if inputMonitoringNeeded {
             menu.addItem(action("입력 모니터링 권한 설정…", #selector(requestInputMonitoring)))
@@ -375,10 +347,14 @@ final class EdgeSwipeApp: NSObject, NSApplicationDelegate {
                 menu.addItem(disabled("\(pad.name) · \(pad.hapticsAvailable ? "햅틱 준비됨" : "햅틱 연결 대기 중")"))
             }
         }
-        if !screens.isEmpty {
+        if !paused, suspension.isEmpty {
             menu.addItem(.separator())
-            for screen in screens.values.sorted(by: { $0.info.name < $1.info.name }) {
-                menu.addItem(disabled("\(screen.info.name) · \(screen.status)"))
+            if brightness == nil {
+                menu.addItem(disabled("내장 화면 밝기 API를 사용할 수 없음"))
+            } else if builtInDisplay != nil {
+                menu.addItem(disabled("MacBook 화면 밝기 준비됨"))
+            } else {
+                menu.addItem(disabled("밝기 조절은 MacBook 단독 화면 구성에서 사용 가능"))
             }
         }
         for control in [Control.volume, .brightness] {

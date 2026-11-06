@@ -1,26 +1,33 @@
 # Release process
 
-The installer is a read-only DMG containing EdgeSwipe and an Applications folder shortcut. Local packaging and signed distribution are separate modes.
+The MacBook release contains volume control, built-in display brightness, trackpad gestures, and per-device haptics. The `experimental/external-displays` branch retains the earlier external display implementation.
 
-## Build and sign the release
+## Validate a candidate
 
-1. Keep the app identifier `io.github.winnercup1602.edgeswipe` and the Developer ID team consistent across public releases. Update `CFBundleShortVersionString` and increment `CFBundleVersion` in `Info.plist`.
-2. On an Apple Silicon Mac, install an Apple **Developer ID Application** signing identity. Set up a local Keychain profile with `xcrun notarytool store-credentials` using your own Apple notarization credentials. Keep the signing key and Apple credentials in Keychain.
-3. Run the following from the repository root.
+1. Update `CFBundleShortVersionString` and increment `CFBundleVersion` in `Info.plist`. Keep the bundle identifier `io.github.winnercup1602.edgeswipe` consistent.
+2. Run `./test.sh` and a release build. Run `swift run EdgeSwipe --probe` on the target MacBook. Add `--round-trip` to check the normal control paths, brightness cancellation, and restoration. The brightness round trip runs when its initial value is on a system keyboard step so the same key path can restore it precisely.
+3. On a MacBook with its built-in display only, verify both edges, directions, system indicators, and haptic strength on each supported trackpad. Check normal pointing, two-finger scrolling, clicks, pause and resume, permission changes, sleep and wake, and Bluetooth reconnection. The pointer must release when input ends or is interrupted.
+4. Install the packaged app into Applications and repeat the gesture checks through the menu bar app. Record the hardware and OS version tested in the release notes.
 
-   ```sh
-   ./test.sh
-   EDGESWIPE_SIGN_IDENTITY='Developer ID Application: Your Name (TEAMID)' \
-   EDGESWIPE_NOTARY_PROFILE='edgeswipe-notary' \
-   ./build-dmg.sh --release
-   ```
+## Ad-hoc signed distribution
 
-The script signs the app with Hardened Runtime and a timestamp, signs the disk image, submits it to Apple, attaches and validates the notarization ticket, and verifies the resulting DMG.
+Build a free downloadable DMG with an Applications folder shortcut.
 
-## Verify and publish
+```sh
+./build-dmg.sh --local dist/EdgeSwipe-0.3.0-arm64.dmg
+shasum -a 256 dist/EdgeSwipe-0.3.0-arm64.dmg > dist/SHA256SUMS
+```
 
-- On a clean Mac account or a second Mac, download and mount the signed DMG, drag the app into Applications, and check Gatekeeper and first launch. Test permissions, gestures, haptics, and the hardware listed in the release notes.
-- For subsequent releases, install over the previous signed build and check whether macOS retains the existing access grants.
-- Attach the validated DMG to a GitHub release with the corresponding version tag. Label early builds as prereleases and document the devices and OS versions tested.
+Upload the DMG and checksum to the matching Git tag. State the ad-hoc signing status and link to Apple's [first-launch approval guide](https://support.apple.com/guide/mac-help/open-a-mac-app-from-an-unknown-developer-mh40616/mac). Ad-hoc signed updates can require renewing macOS privacy permissions.
 
-Use `./build-dmg.sh --local` for a development image that can be checked on the build Mac. The release build requires a valid signing identity and a notarization profile. See [Apple’s packaging guide](https://developer.apple.com/documentation/xcode/packaging-mac-software-for-distribution).
+## Developer ID distribution
+
+A Developer ID Application identity and a notarization profile enable Apple's signed distribution flow. Keep the signing key and notarization credentials in Keychain, and keep the Developer ID team consistent across updates.
+
+```sh
+EDGESWIPE_SIGN_IDENTITY='Developer ID Application: Your Name (TEAMID)' \
+EDGESWIPE_NOTARY_PROFILE='edgeswipe-notary' \
+./build-dmg.sh --release
+```
+
+The script enables Hardened Runtime, signs the app and disk image, submits the image to Apple, attaches the notarization ticket, and validates the result. On a second Mac or clean account, verify download, installation, first launch, and permission retention before publishing.

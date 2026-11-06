@@ -36,7 +36,6 @@ for size in 16 32 128 256 512; do
 done
 iconutil --convert icns "$iconset" --output "$bundle/Contents/Resources/EdgeSwipe.icns"
 install -m 644 "$project_dir/LICENSE" "$bundle/Contents/Resources/"
-install -m 644 "$project_dir/Assets/AppleSiliconDDC-LICENSE.txt" "$bundle/Contents/Resources/"
 install -m 755 "$bin_dir/EdgeSwipe" "$bundle/Contents/MacOS/EdgeSwipe"
 install -m 644 "$project_dir/Info.plist" "$bundle/Contents/Info.plist"
 plutil -lint "$bundle/Contents/Info.plist"

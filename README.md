@@ -1,28 +1,42 @@
 # EdgeSwipe
 
-A free macOS menu bar app that turns the edges of a Force Touch trackpad into volume and brightness controls.
+A free MacBook menu bar app for volume and built-in display brightness gestures on a Force Touch trackpad.
 
-- Swipe up or down along the **left edge** to adjust the default audio output.
-- Swipe up or down along the **right edge** to adjust the display under the pointer when the gesture starts.
-- An accepted gesture briefly holds the pointer in place. Confirmed steps provide a haptic tick on the trackpad in use.
+- Swipe vertically along the **left edge** to adjust the default audio output.
+- Swipe vertically along the **right edge** to adjust the MacBook display brightness.
+- Swipe up to increase and down to decrease. Confirmed changes produce a haptic tick on the trackpad in use, with strength proportional to the resulting level.
+- The pointer stays still during a recognized gesture and releases when the gesture ends or input is interrupted.
 
-## Status and compatibility
+## Download and install
 
-This repository is available as a **source preview**. The signed installer will be published in [Releases](https://github.com/winnercup1602/EdgeSwipe/releases) when available. The current menu is in Korean.
+Download the Apple Silicon DMG from [Releases](https://github.com/winnercup1602/EdgeSwipe/releases). Open it and drag **EdgeSwipe.app** into **Applications**.
+
+The downloadable build uses ad-hoc signing. First launch can require approval in **System Settings → Privacy & Security → Open Anyway**. Apple's [unknown developer guide](https://support.apple.com/guide/mac-help/open-a-mac-app-from-an-unknown-developer-mh40616/mac) explains the approval process.
+
+1. Open EdgeSwipe from Applications and select its trackpad icon in the menu bar.
+2. Enable EdgeSwipe in **System Settings → Privacy & Security → Accessibility**. Some macOS versions label this access **Device Control & Data Access**.
+3. If the menu requests **Input Monitoring**, enable it for EdgeSwipe as well.
+4. Start one finger in the outer 5% of either trackpad edge and swipe vertically. Clicking, adding another finger, moving sideways, or leaving the edge cancels the gesture.
+5. Use **일시정지** to pause and **EdgeSwipe 종료** to quit.
+
+An ad-hoc signed update can require granting access again. The menu shows permission and device status. The current menu is in Korean.
+
+## Supported setup
 
 | Feature | Scope |
 | --- | --- |
-| Mac and trackpad | Apple Silicon. Tested on an M2 MacBook Air running macOS 27.2, with its built-in trackpad and a Bluetooth Magic Trackpad. |
-| Brightness | MacBook display and external displays with a usable hardware brightness path. Direct DDC/CI was tested with an LG HDR 4K monitor. |
-| DisplayLink | Requires DisplayLink Manager to report a valid hardware brightness value. The Dell P2723D was adjustable on some connections or sessions and unavailable on others with the same setup. |
-| Brightness feedback | The built-in screen uses standard brightness-key input for macOS feedback when event posting is available. Confirmed external brightness changes request the system's classic indicator on the selected display. |
-| Audio | The default audio device must expose a writable system volume. |
+| Mac | Apple Silicon MacBook with a Force Touch trackpad. |
+| Display | The MacBook's built-in screen must be the only online display for brightness gestures. The menu reports when a different display configuration is connected. |
+| Trackpads | Built-in Force Touch trackpad and supported Magic Trackpad devices over Bluetooth or USB. |
+| Brightness | Standard macOS brightness-key input, confirmed by reading the built-in display level. Brightness stays at or above one system step. |
+| Audio | The default output device must expose a writable system volume. |
+| Feedback | macOS displays its system controls. Other applications that handle brightness keys can affect their behavior. |
 
-The project builds with a macOS 14 deployment target. The table lists the hardware and OS verified in use. Global touch coordinates, per-device haptics, and some brightness routes use undocumented macOS interfaces and may need updates after OS changes.
+Hardware testing used an M2 MacBook Air running macOS 27.2, its built-in trackpad, and a Bluetooth Magic Trackpad. CI builds and tests on macOS 26. The deployment target is macOS 14. Trackpad input and per-device haptics use undocumented macOS interfaces, so hardware and OS compatibility require verification on each supported setup.
 
-## Build and run locally
+## Build from source
 
-On an Apple Silicon Mac with the Xcode Command Line Tools:
+Install the Xcode Command Line Tools on an Apple Silicon Mac, then run the following.
 
 ```sh
 git clone https://github.com/winnercup1602/EdgeSwipe.git
@@ -32,15 +46,12 @@ cd EdgeSwipe
 open dist/EdgeSwipe.app
 ```
 
-To make a local test installer, run `./build-dmg.sh --local`. The local image contains an ad hoc-signed app. See [release instructions](RELEASING.md) for Developer ID signing and notarization.
+Create an ad-hoc signed DMG with `./build-dmg.sh --local`. See [release instructions](RELEASING.md) for packaging, hardware checks, and Developer ID signing.
 
-1. Launch EdgeSwipe and open its trackpad icon in the menu bar.
-2. Grant the app access in **System Settings → Privacy & Security → Accessibility**. On macOS versions that use the **Device Control & Data Access** label, select that entry.
-3. If the menu asks for **Input Monitoring**, enable it for EdgeSwipe as well.
-4. Place one finger at the left or right edge and swipe vertically. Use **일시정지** to pause or **EdgeSwipe 종료** to quit.
+The earlier external-display implementation is preserved on [experimental/external-displays](https://github.com/winnercup1602/EdgeSwipe/tree/experimental/external-displays).
 
 ## Privacy and license
 
-Touch frames are processed locally for gesture recognition. The app uses local preferences and system logs, and communicates with DisplayLink Manager through local notifications. EdgeSwipe contains no account, telemetry, or network client.
+Touch frames are processed locally. Preferences and diagnostic system logs stay on the Mac. EdgeSwipe has no account, analytics, or network client.
 
-The source is licensed under [MIT](LICENSE). The [AppleSiliconDDC MIT notice](Assets/AppleSiliconDDC-LICENSE.txt) accompanies the app. The DDC/CI implementation references [AppleSiliconDDC](https://github.com/waydabber/AppleSiliconDDC). [EdgePad](https://github.com/forkiron/EdgePad) and [Mac Trackpad Wizard](https://github.com/jasonhejiahuan/Mac-Trackpad-Wizard) are references for the macOS multitouch and actuator interfaces.
+The source is licensed under [MIT](LICENSE). [EdgePad](https://github.com/forkiron/EdgePad) and [Mac Trackpad Wizard](https://github.com/jasonhejiahuan/Mac-Trackpad-Wizard) provide references for the macOS multitouch and actuator interfaces.

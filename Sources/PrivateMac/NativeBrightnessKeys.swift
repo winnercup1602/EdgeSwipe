@@ -7,10 +7,9 @@ public enum NativeBrightnessKeys {
     public static func post(increase: Bool, on display: CGDirectDisplayID,
                             whileValid: () -> Bool) -> Bool {
         DispatchQueue.main.sync {
-            guard whileValid(), CGDisplayIsBuiltin(display) != 0,
-                  CGDisplayIsActive(display) != 0, CGPreflightPostEventAccess(),
+            guard whileValid(), BuiltInDisplay.activeID == display, CGPreflightPostEventAccess(),
                   let point = CGEvent(source: nil)?.location,
-                  DisplayInfo.id(at: point) == display else { return false }
+                  CGDisplayBounds(display).contains(point) else { return false }
 
             let key = increase ? NX_KEYTYPE_BRIGHTNESS_UP : NX_KEYTYPE_BRIGHTNESS_DOWN
             func event(_ state: Int32) -> CGEvent? {
