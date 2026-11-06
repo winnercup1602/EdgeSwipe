@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?><!-- sparkle-sign-warning:
+IMPORTANT: This file was signed by Sparkle. Any modifications to this file requires re-signing this file with generate_appcast or sign_update! The signed signature will be embedded at the end of this file.
+--><rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
+  <channel>
+    <title>EdgeSwipe updates</title>
+    <link>https://github.com/winnercup1602/EdgeSwipe/releases</link>
+    <description>Signed EdgeSwipe releases</description>
+    <item>
+      <title>EdgeSwipe 0.3.0</title>
+      <pubDate>Fri, 06 Nov 2026 14:26:47 +0000</pubDate>
+      <sparkle:version>14</sparkle:version>
+      <sparkle:shortVersionString>0.3.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <enclosure url="https://github.com/winnercup1602/EdgeSwipe/releases/download/v0.3.0/EdgeSwipe-0.3.0-arm64.dmg" length="1869231" type="application/octet-stream" sparkle:edSignature="rAXqL6WhQEuZa2AELBkxAqEFqPhnyfS4p2uBSkjDCalJV0vZQdfaZ714KQsQb5pkgrX02qL17C+LNvyZiU0bDg=="></enclosure>
+    </item>
+  </channel>
+</rss><!-- sparkle-signatures:
+edSignature: f58quVrII51JdXfHQWvXyAc6xlac1v1IeCfWIvzD0o2tME2sLRDT37nHNaFUGU33w81QXDIoNKvvnhiOKdZ6BA==
+length: 1165
+-->
