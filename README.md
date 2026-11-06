@@ -14,8 +14,8 @@ Download the Apple Silicon DMG from [Releases](https://github.com/winnercup1602/
 
 The downloadable build uses ad-hoc signing. First launch can require approval in **System Settings → Privacy & Security → Open Anyway**. Apple's [unknown developer guide](https://support.apple.com/guide/mac-help/open-a-mac-app-from-an-unknown-developer-mh40616/mac) explains the approval process.
 
-1. Open EdgeSwipe from Applications and select its trackpad icon in the menu bar.
-2. Enable EdgeSwipe in **System Settings → Privacy & Security → Accessibility**. Some macOS versions label this access **Device Control & Data Access**.
+1. Open EdgeSwipe from Applications. A setup guide appears when Accessibility access is missing; you can also open it from the menu bar.
+2. Use the guide's **설정 열기** button, then drag its app icon into the settings list and turn on EdgeSwipe. If it is already listed, turn on its switch. You can also add the app with the list's **+** button. The guide detects permission changes without restarting. Some macOS versions label this access **Device Control & Data Access**; the guide uses the system's name. Apple's [accessibility permission guide](https://support.apple.com/guide/mac-help/allow-accessibility-apps-to-access-your-mac-mh43185/mac) explains the system permission controls.
 3. If the menu requests **Input Monitoring**, enable it for EdgeSwipe as well.
 4. Start one finger in the outer 5% of either trackpad edge and swipe vertically. Clicking, adding another finger, moving sideways, or leaving the edge cancels the gesture.
 5. Use **일시정지** to pause and **EdgeSwipe 종료** to quit.

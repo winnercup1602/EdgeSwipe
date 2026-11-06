@@ -57,7 +57,9 @@ final class EdgeSwipeApp: NSObject, NSApplicationDelegate {
     private var observers: [NSObjectProtocol] = []
     private var screenObserver: NSObjectProtocol?
     private var statusItem: NSStatusItem?
+    private var accessibilityGuide: AccessibilityGuide?
     private var trusted = false
+    private var postingAllowed = false
     private var captureEnabled = false
     private var inputMonitoringNeeded = false
     private var paused = UserDefaults.standard.bool(forKey: "paused")
@@ -85,6 +87,7 @@ final class EdgeSwipeApp: NSObject, NSApplicationDelegate {
         timer.tolerance = 0.2
         permissionTimer = timer
         RunLoop.main.add(timer, forMode: .common)
+        if !trusted || !postingAllowed { requestAccessibility() }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -303,8 +306,10 @@ final class EdgeSwipeApp: NSObject, NSApplicationDelegate {
     private func checkPermission() {
         let wasReady = captureEnabled
         let wasTrusted = trusted
+        let wasPostingAllowed = postingAllowed
         let previouslyNeededMonitoring = inputMonitoringNeeded
         trusted = AXIsProcessTrusted()
+        postingAllowed = CGPreflightPostEventAccess()
         if !trusted {
             endStroke()
             if wasTrusted { cancelPendingBrightnessStep() }
@@ -316,7 +321,9 @@ final class EdgeSwipeApp: NSObject, NSApplicationDelegate {
         captureEnabled = trusted && !paused && suspension.isEmpty && pointer.ready
         inputMonitoringNeeded = trusted && !captureEnabled && !paused && suspension.isEmpty
             && !CGPreflightListenEventAccess()
-        if wasReady != captureEnabled || wasTrusted != trusted || inputMonitoringNeeded != previouslyNeededMonitoring {
+        accessibilityGuide?.refresh(granted: trusted && postingAllowed)
+        if wasReady != captureEnabled || wasTrusted != trusted || wasPostingAllowed != postingAllowed
+            || inputMonitoringNeeded != previouslyNeededMonitoring {
             updateMenu()
         }
     }
@@ -342,11 +349,12 @@ final class EdgeSwipeApp: NSObject, NSApplicationDelegate {
         menu.addItem(settingsItem)
         menu.addItem(.separator())
 
-        if !trusted || !CGPreflightPostEventAccess() {
-            menu.addItem(action("손쉬운 사용 권한 설정…", #selector(requestAccessibility)))
-        } else if inputMonitoringNeeded {
+        let accessibilityTitle = trusted && postingAllowed
+            ? "\(AccessibilityGuide.permissionName) 권한 안내…" : "\(AccessibilityGuide.permissionName) 권한 설정…"
+        menu.addItem(action(accessibilityTitle, #selector(requestAccessibility)))
+        if inputMonitoringNeeded {
             menu.addItem(action("입력 모니터링 권한 설정…", #selector(requestInputMonitoring)))
-        } else if !paused && suspension.isEmpty && !pointer.ready {
+        } else if trusted && !paused && suspension.isEmpty && !pointer.ready {
             menu.addItem(disabled("커서 고정에 필요한 입력 이벤트를 열 수 없음"))
         }
 
@@ -410,11 +418,8 @@ final class EdgeSwipeApp: NSObject, NSApplicationDelegate {
     }
 
     @objc private func requestAccessibility() {
-        let prompt = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
-        _ = AXIsProcessTrustedWithOptions(prompt)
-        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
-            NSWorkspace.shared.open(url)
-        }
+        if accessibilityGuide == nil { accessibilityGuide = AccessibilityGuide() }
+        accessibilityGuide?.present(granted: trusted && postingAllowed)
     }
 
     @objc private func requestInputMonitoring() {
