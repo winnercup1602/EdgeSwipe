@@ -61,6 +61,7 @@ final class EdgeSwipeApp: NSObject, NSApplicationDelegate {
     private var captureEnabled = false
     private var inputMonitoringNeeded = false
     private var paused = UserDefaults.standard.bool(forKey: "paused")
+    private var edgesSwapped = UserDefaults.standard.bool(forKey: "edgesSwapped")
     private var controlErrors: [Control: String] = [:]
     private var builtInDisplay: CGDirectDisplayID?
     private var latestBrightnessStroke: OperationLease?
@@ -118,8 +119,9 @@ final class EdgeSwipeApp: NSObject, NSApplicationDelegate {
         let transition = gesture.update(touch)
         recognizers[device] = gesture
         switch transition {
-        case .started(let control):
+        case .started(let edge):
             guard !mouseButtonIsDown else { recognizers[device]?.cancel(); return }
+            let control = edge.control(swapped: edgesSwapped)
             var started = Session(device: device, control: control, lastFrame: now)
             if control == .brightness {
                 guard let display = builtInDisplay, let brightness else {
@@ -326,6 +328,18 @@ final class EdgeSwipeApp: NSObject, NSApplicationDelegate {
         let status = paused ? "일시정지됨" : (suspension.isEmpty ? "EdgeSwipe" : "대기 중")
         menu.addItem(disabled(status))
         menu.addItem(action(paused ? "다시 시작" : "일시정지", #selector(togglePause)))
+        let edgeSettings = NSMenu()
+        edgeSettings.autoenablesItems = false
+        for swapped in [false, true] {
+            let title = swapped ? "왼쪽 밝기 · 오른쪽 볼륨" : "왼쪽 볼륨 · 오른쪽 밝기"
+            let item = action(title, #selector(changeEdgeMapping(_:)))
+            item.tag = swapped ? 1 : 0
+            item.state = swapped == edgesSwapped ? .on : .off
+            edgeSettings.addItem(item)
+        }
+        let settingsItem = NSMenuItem(title: "가장자리 기능", action: nil, keyEquivalent: "")
+        settingsItem.submenu = edgeSettings
+        menu.addItem(settingsItem)
         menu.addItem(.separator())
 
         if !trusted || !CGPreflightPostEventAccess() {
@@ -383,6 +397,16 @@ final class EdgeSwipeApp: NSObject, NSApplicationDelegate {
         paused.toggle()
         UserDefaults.standard.set(paused, forKey: "paused")
         reconcile()
+    }
+
+    @objc private func changeEdgeMapping(_ sender: NSMenuItem) {
+        let swapped = sender.tag == 1
+        guard swapped != edgesSwapped else { return }
+        endStroke()
+        cancelPendingBrightnessStep()
+        edgesSwapped = swapped
+        UserDefaults.standard.set(swapped, forKey: "edgesSwapped")
+        updateMenu()
     }
 
     @objc private func requestAccessibility() {

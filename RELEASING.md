@@ -6,7 +6,7 @@ The MacBook release contains volume control, built-in display brightness, trackp
 
 1. Update `CFBundleShortVersionString` and increment `CFBundleVersion` in `Info.plist`. Keep the bundle identifier `io.github.winnercup1602.edgeswipe` consistent.
 2. Run `./test.sh` and a release build. Run `swift run EdgeSwipe --probe` on the target MacBook. Add `--round-trip` to check the normal control paths, brightness cancellation, and restoration. The brightness round trip runs when its initial value is on a system keyboard step so the same key path can restore it precisely.
-3. On a MacBook with its built-in display only, verify both edges, directions, system indicators, and haptic strength on each supported trackpad. Check normal pointing, two-finger scrolling, clicks, pause and resume, permission changes, sleep and wake, and Bluetooth reconnection. The pointer must release when input ends or is interrupted.
+3. On a MacBook with its built-in display only, verify both edges, directions, system indicators, and haptic strength on each supported trackpad. Check both edge mappings and preference retention after a restart. Check normal pointing, two-finger scrolling, clicks, pause and resume, permission changes, sleep and wake, and Bluetooth reconnection. The pointer must release when input ends or is interrupted.
 4. Install the packaged app into Applications and repeat the gesture checks through the menu bar app. Record the hardware and OS version tested in the release notes.
 
 ## Ad-hoc signed distribution

@@ -6,6 +6,17 @@ public enum Control: Equatable, Sendable {
     public var minimum: Double { self == .brightness ? Self.stepSize : 0 }
 }
 
+public enum Edge: Equatable, Sendable {
+    case left, right
+
+    public func control(swapped: Bool) -> Control {
+        switch (self, swapped) {
+        case (.left, false), (.right, true): return .volume
+        case (.right, false), (.left, true): return .brightness
+        }
+    }
+}
+
 public enum Direction: Int, Equatable, Sendable {
     case down = -1, up = 1
 }
@@ -15,13 +26,13 @@ public enum Touch: Equatable, Sendable {
 }
 
 public enum Transition: Equatable, Sendable {
-    case unchanged, started(Control), recognized, ended
+    case unchanged, started(Edge), recognized, ended
 }
 
 public struct EdgeGesture {
     private struct Stroke {
         let id: Int32
-        let control: Control
+        let edge: Edge
         let x: Double
         let y: Double
         var lastY: Double
@@ -55,17 +66,17 @@ public struct EdgeGesture {
             }
             switch state {
             case .idle:
-                let control: Control
+                let edge: Edge
                 if x <= Self.edgeWidth {
-                    control = .volume
+                    edge = .left
                 } else if x >= 1 - Self.edgeWidth {
-                    control = .brightness
+                    edge = .right
                 } else {
                     state = .blocked
                     return .unchanged
                 }
-                state = .candidate(Stroke(id: id, control: control, x: x, y: y, lastY: y))
-                return .started(control)
+                state = .candidate(Stroke(id: id, edge: edge, x: x, y: y, lastY: y))
+                return .started(edge)
             case .blocked:
                 return .unchanged
             case let .candidate(stroke):
@@ -126,6 +137,6 @@ public struct EdgeGesture {
 
     private func matches(_ stroke: Stroke, id: Int32, x: Double) -> Bool {
         guard id == stroke.id else { return false }
-        return stroke.control == .volume ? x <= Self.holdWidth : x >= 1 - Self.holdWidth
+        return stroke.edge == .left ? x <= Self.holdWidth : x >= 1 - Self.holdWidth
     }
 }

@@ -23,6 +23,7 @@ struct GestureCoreTests {
     static func main() {
         let tests: [(String, () throws -> Void)] = [
             ("left up, right down, consecutive strokes", directions),
+            ("swapped controls retain physical edge and direction", swappedControls),
             ("center start never activates at an edge", centerStart),
             ("horizontal motion and leaving edge cancel", edgeExit),
             ("multitouch, contact replacement, and explicit cancel", otherContacts),
@@ -46,7 +47,7 @@ struct GestureCoreTests {
 
     private static func directions() throws {
         var gesture = EdgeGesture()
-        try expect(gesture.update(finger(0.03, 0.30)) == .started(.volume))
+        try expect(gesture.update(finger(0.03, 0.30)) == .started(.left))
         try expect(gesture.update(finger(0.03, 0.31)) == .unchanged)
         try expect(gesture.update(finger(0.03, 0.325)) == .recognized)
         try expect(gesture.nextStep() == nil)
@@ -54,9 +55,32 @@ struct GestureCoreTests {
         try expect(gesture.nextStep() == .up)
         try expect(gesture.nextStep() == nil)
         try expect(gesture.update(.none) == .ended)
-        try expect(gesture.update(finger(0.97, 0.75)) == .started(.brightness))
+        try expect(gesture.update(finger(0.97, 0.75)) == .started(.right))
         try expect(gesture.update(finger(0.97, 0.705)) == .recognized)
         try expect(gesture.nextStep() == .down)
+    }
+
+    private static func swappedControls() throws {
+        for edge in [Edge.left, .right] {
+            try expect(edge.control(swapped: false) == (edge == .left ? .volume : .brightness))
+            try expect(edge.control(swapped: true) == (edge == .left ? .brightness : .volume))
+            let x = edge == .left ? 0.03 : 0.97
+            for direction in [Direction.up, .down] {
+                var gesture = EdgeGesture()
+                try expect(gesture.update(finger(x, 0.5)) == .started(edge))
+                try expect(gesture.update(finger(x, 0.5 + Double(direction.rawValue) * 0.045)) == .recognized)
+                try expect(gesture.nextStep() == direction)
+                let outside = edge == .left ? 0.09 : 0.91
+                try expect(gesture.update(finger(outside, 0.6)) == .ended)
+                try expect(gesture.nextStep() == nil)
+                try expect(gesture.update(finger(x, 0.7)) == .unchanged)
+                _ = gesture.update(.none)
+                try expect(gesture.update(finger(x, 0.5)) == .started(edge))
+                _ = gesture.cancel()
+                try expect(gesture.update(finger(x, 0.6)) == .unchanged)
+                try expect(gesture.nextStep() == nil)
+            }
+        }
     }
 
     private static func centerStart() throws {
@@ -69,11 +93,11 @@ struct GestureCoreTests {
 
     private static func edgeExit() throws {
         var gesture = EdgeGesture()
-        try expect(gesture.update(finger(0.025, 0.5)) == .started(.volume))
+        try expect(gesture.update(finger(0.025, 0.5)) == .started(.left))
         try expect(gesture.update(finger(0.055, 0.51)) == .ended)
         try expect(gesture.update(finger(0.03, 0.7)) == .unchanged)
         _ = gesture.update(.none)
-        try expect(gesture.update(finger(0.045, 0.5)) == .started(.volume))
+        try expect(gesture.update(finger(0.045, 0.5)) == .started(.left))
         try expect(gesture.update(finger(0.05, 0.55)) == .recognized)
         try expect(gesture.update(finger(0.085, 0.57)) == .ended)
         try expect(gesture.nextStep() == nil)

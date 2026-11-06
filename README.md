@@ -4,6 +4,7 @@ A free MacBook menu bar app for volume and built-in display brightness gestures 
 
 - Swipe vertically along the **left edge** to adjust the default audio output.
 - Swipe vertically along the **right edge** to adjust the MacBook display brightness.
+- Swap the two controls from **가장자리 기능** in the menu. The choice is saved across app restarts.
 - Swipe up to increase and down to decrease. Confirmed changes produce a haptic tick on the trackpad in use, with strength proportional to the resulting level.
 - The pointer stays still during a recognized gesture and releases when the gesture ends or input is interrupted.
 
