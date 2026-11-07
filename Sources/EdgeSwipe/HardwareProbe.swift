@@ -12,6 +12,9 @@ func runHardwareProbe(roundTrip: Bool) -> Int32 {
                                                         reason: "Verify EdgeSwipe hardware controls")
     defer { ProcessInfo.processInfo.endActivity(activity) }
     var failures = 0
+    if let keyboard = KeyboardBrightness(), let level = try? keyboard.read() {
+        print("Keyboard brightness read: \(level)")
+    } else { print("Keyboard backlight unavailable") }
     let trackpads = Trackpads()
     var frames: [UInt64: Int] = [:]
     trackpads.onFrame = { id, _ in frames[id, default: 0] += 1 }
@@ -45,6 +48,10 @@ func runHardwareProbe(roundTrip: Bool) -> Int32 {
 
 private func probeControls(roundTrip: Bool) -> Int {
     var failures = 0
+    let bridge = DisplayLinkBrightness()
+    for screen in BrightnessScreen.detect(native: NativeBrightness(), bridge: bridge, whileValid: { true }) {
+        print("Display \(screen.info.name): \(screen.status)")
+    }
 
     do {
         let audio = try AudioOutput.current()
@@ -54,6 +61,8 @@ private func probeControls(roundTrip: Bool) -> Int {
             try checkRoundTrip("volume", original: current, readFresh: audio.read,
                                adjust: { try ControlTarget.volume(audio).adjust($0, whileValid: { true }) },
                                restore: audio.write)
+            try checkRoundTrip("fine volume", original: current, readFresh: audio.read,
+                adjust: { try ControlTarget.volume(audio).adjust($0, step: 1.0 / 64, whileValid: { true }) }, restore: audio.write)
         }
     } catch {
         print("volume probe failed: \(error)")
@@ -62,7 +71,7 @@ private func probeControls(roundTrip: Bool) -> Int {
 
     do {
         guard let display = BuiltInDisplay.activeID, let native = NativeBrightness() else {
-            print("brightness probe requires a MacBook with its built-in display only")
+            print("brightness probe requires an active MacBook built-in display")
             return failures + 1
         }
         let brightness = BuiltInBrightness(display: display, native: native)
@@ -74,6 +83,9 @@ private func probeControls(roundTrip: Bool) -> Int {
                                adjust: { try brightness.adjust($0, whileValid: { true }) },
                                restore: { try restoreBrightness($0, using: brightness) })
             try checkBrightnessCancellation(brightness)
+            try checkRoundTrip("fine brightness", original: current, readFresh: brightness.read,
+                adjust: { try brightness.adjust($0, step: 1.0 / 64, whileValid: { true }) },
+                restore: { try restoreBrightness($0, using: brightness, step: 1.0 / 64) })
         } else if roundTrip {
             print("brightness round-trip requires an initial system keyboard step")
         }
@@ -81,15 +93,23 @@ private func probeControls(roundTrip: Bool) -> Int {
         print("brightness probe failed: \(error)")
         failures += 1
     }
+    if roundTrip, let keyboard = KeyboardBrightness() {
+        do {
+            let original = try keyboard.read()
+            try checkRoundTrip("keyboard brightness", original: original, readFresh: keyboard.read,
+                adjust: { try ControlTarget.keyboard(keyboard).adjust($0, whileValid: { true }) },
+                restore: { _ = try keyboard.write($0) })
+        } catch { print("keyboard brightness probe failed: \(error)"); failures += 1 }
+    }
     return failures
 }
 
-private func restoreBrightness(_ original: Double, using brightness: BuiltInBrightness) throws {
+private func restoreBrightness(_ original: Double, using brightness: BuiltInBrightness, step: Double = Control.stepSize) throws {
     let actual = try brightness.read()
     guard abs(actual - original) > 0.0001 else { return }
     guard abs(actual - original) <= Control.stepSize + 0.012 else { throw ControlFailure.targetChanged }
     let direction: Direction = actual < original ? .up : .down
-    guard try brightness.adjust(direction, whileValid: { true }) != nil else {
+    guard try brightness.adjust(direction, step: step, whileValid: { true }) != nil else {
         throw ControlFailure.brightnessKeyUnconfirmed
     }
 }

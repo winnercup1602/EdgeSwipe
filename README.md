@@ -1,8 +1,8 @@
 # EdgeSwipe
 
-A free MacBook menu bar app. Swipe the trackpad's **left edge for volume** and **right edge for brightness**, with haptic feedback. Swap sides or pause from the menu.
+A free MacBook menu bar app for trackpad edge controls: volume, display and keyboard brightness, app switching, video seeking and media. Includes configurable taps and haptics.
 
-Supports built-in Force Touch and Magic Trackpad on Apple Silicon, macOS 14+. Brightness requires the MacBook's built-in screen to be the only online display.
+Supports built-in Force Touch and Magic Trackpad on Apple Silicon, macOS 14+. External brightness requires DDC/CI or a compatible DisplayLink Manager connection.
 
 ## Install
 
@@ -20,6 +20,6 @@ With Xcode Command Line Tools installed:
 open dist/EdgeSwipe.app
 ```
 
-[Releases](https://github.com/winnercup1602/EdgeSwipe/releases) · [Release guide](RELEASING.md) · [MIT](LICENSE)
+[Releases](https://github.com/winnercup1602/EdgeSwipe/releases) · [Features](FEATURES.md) · [Release guide](RELEASING.md) · [MIT](LICENSE)
 
-API references: [EdgePad](https://github.com/forkiron/EdgePad), [Mac Trackpad Wizard](https://github.com/jasonhejiahuan/Mac-Trackpad-Wizard).
+[Credits](CREDITS.md).

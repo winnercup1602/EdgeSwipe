@@ -30,7 +30,7 @@ struct GestureCoreTests {
             ("reversal and travel discard at a limit", reversal),
             ("volume and brightness steps and clamps", adjustment),
             ("successful-write feedback and increasing gain", feedback)
-        ]
+        ] + ExpandedGestureTests.cases
         var failures = 0
         for (name, run) in tests {
             do {
@@ -62,8 +62,10 @@ struct GestureCoreTests {
 
     private static func swappedControls() throws {
         for edge in [Edge.left, .right] {
-            try expect(edge.control(swapped: false) == (edge == .left ? .volume : .brightness))
-            try expect(edge.control(swapped: true) == (edge == .left ? .brightness : .volume))
+            var settings = GestureSettings()
+            try expect(settings.action(for: edge) == (edge == .left ? .volume : .brightness))
+            settings.swapped = true
+            try expect(settings.action(for: edge) == (edge == .left ? .brightness : .volume))
             let x = edge == .left ? 0.03 : 0.97
             for direction in [Direction.up, .down] {
                 var gesture = EdgeGesture()

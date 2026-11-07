@@ -1,6 +1,8 @@
 import AppKit
 
 #if DEBUG
+if CommandLine.arguments.contains("--probe-updater") { exit(runUpdaterProbe()) }
+if CommandLine.arguments.contains("--self-test") { exit(runAppSelfTests()) }
 if CommandLine.arguments.contains("--probe") {
     exit(runHardwareProbe(roundTrip: CommandLine.arguments.contains("--round-trip")))
 }

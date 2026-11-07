@@ -6,8 +6,16 @@ import MTLayout
 
 public enum TrackpadContact: Equatable {
     case empty
-    case finger(id: Int32, x: Double, y: Double)
+    case contacts([TrackpadFinger])
     case invalid
+}
+
+public struct TrackpadFinger: Equatable {
+    public let id: Int32
+    public let x: Double
+    public let y: Double
+    public let size: Double
+    public let majorAxis: Double
 }
 
 public struct TrackpadStatus {
@@ -154,19 +162,19 @@ private let contactCallback: MTCallback = { device, data, count, _, _ in
     }
 
     let contacts = data.assumingMemoryBound(to: ESContact.self)
-    var frame = TrackpadContact.empty
+    var fingers: [TrackpadFinger] = []
     for index in 0..<Int(count) {
         let contact = contacts[index]
         guard contact.state == 3 || contact.state == 4 else { continue }
-        let x = Double(contact.x)
-        let y = Double(contact.y)
-        guard frame == .empty, (-0.08...1.08).contains(x), (-0.08...1.08).contains(y) else {
-            frame = .invalid
-            break
+        let x = Double(contact.x), y = Double(contact.y)
+        guard x.isFinite, y.isFinite, (-0.08...1.08).contains(x), (-0.08...1.08).contains(y) else {
+            relay.enqueue(.invalid)
+            return 0
         }
-        frame = .finger(id: contact.path, x: min(1, max(0, x)), y: min(1, max(0, y)))
+        fingers.append(TrackpadFinger(id: contact.path, x: min(1, max(0, x)), y: min(1, max(0, y)),
+                                      size: Double(contact.size), majorAxis: Double(contact.majorAxis)))
     }
-    relay.enqueue(frame)
+    relay.enqueue(fingers.isEmpty ? .empty : .contacts(fingers))
     return 0
 }
 

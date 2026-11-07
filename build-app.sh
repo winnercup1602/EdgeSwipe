@@ -19,6 +19,8 @@ if [[ -e "$output" || -L "$output" ]]; then
     fi
 fi
 
+"$project_dir/prepare-dependencies.sh"
+
 swift build --package-path "$project_dir" --scratch-path "$scratch" -c release --product EdgeSwipe
 bin_dir="$(swift build --package-path "$project_dir" --scratch-path "$scratch" -c release --show-bin-path)"
 mkdir -p "$(dirname "$output")"
@@ -26,7 +28,8 @@ staging="$(mktemp -d "$(dirname "$output")/.edgeswipe-bundle.XXXXXXXX")"
 trap 'rm -rf "$staging"' EXIT
 bundle="$staging/EdgeSwipe.app"
 iconset="$staging/EdgeSwipe.iconset"
-mkdir -p "$bundle/Contents/MacOS" "$bundle/Contents/Resources" "$iconset"
+mkdir -p "$bundle/Contents/MacOS" "$bundle/Contents/Resources" "$bundle/Contents/Frameworks" "$iconset"
+ditto "$project_dir/Vendor/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework" "$bundle/Contents/Frameworks/Sparkle.framework"
 for size in 16 32 128 256 512; do
     sips -z "$size" "$size" "$project_dir/Assets/EdgeSwipe.png" \
         --out "$iconset/icon_${size}x${size}.png" >/dev/null
@@ -36,15 +39,21 @@ for size in 16 32 128 256 512; do
 done
 iconutil --convert icns "$iconset" --output "$bundle/Contents/Resources/EdgeSwipe.icns"
 install -m 644 "$project_dir/LICENSE" "$bundle/Contents/Resources/"
+install -m 644 "$project_dir/Assets/AppleSiliconDDC-LICENSE.txt" "$bundle/Contents/Resources/"
+install -m 644 "$project_dir/Assets/Sparkle-LICENSE.txt" "$bundle/Contents/Resources/"
 install -m 755 "$bin_dir/EdgeSwipe" "$bundle/Contents/MacOS/EdgeSwipe"
 install -m 644 "$project_dir/Info.plist" "$bundle/Contents/Info.plist"
 plutil -lint "$bundle/Contents/Info.plist"
 if [[ -n "$sign_identity" ]]; then
+    framework="$bundle/Contents/Frameworks/Sparkle.framework/Versions/B"
+    for component in "$framework"/XPCServices/*.xpc "$framework/Updater.app" "$framework/Autoupdate" "$bundle/Contents/Frameworks/Sparkle.framework"; do
+        codesign --force --sign "$sign_identity" --preserve-metadata=entitlements --options runtime --timestamp "$component"
+    done
     codesign --force --sign "$sign_identity" --options runtime --timestamp "$bundle"
 else
     codesign --force --sign - "$bundle"
 fi
-codesign --verify --strict "$bundle"
+codesign --verify --deep --strict "$bundle"
 if [[ -e "$output" ]]; then
     mv "$output" "$staging/previous.app"
 fi
@@ -52,5 +61,5 @@ if ! mv "$bundle" "$output"; then
     if [[ -e "$staging/previous.app" ]]; then mv "$staging/previous.app" "$output"; fi
     exit 1
 fi
-codesign --verify --strict "$output"
+codesign --verify --deep --strict "$output"
 printf '%s\n' "$output"
