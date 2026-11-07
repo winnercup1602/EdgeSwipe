@@ -6,9 +6,11 @@ let package = Package(
     platforms: [.macOS(.v14)],
     products: [.executable(name: "EdgeSwipe", targets: ["EdgeSwipe"])],
     targets: [
+        .binaryTarget(name: "Sparkle", path: "Vendor/Sparkle.xcframework"),
         .target(name: "GestureCore"),
         .target(name: "MTLayout"),
-        .target(name: "PrivateMac", dependencies: ["MTLayout"]),
-        .executableTarget(name: "EdgeSwipe", dependencies: ["GestureCore", "PrivateMac"])
+        .target(name: "PrivateMac", dependencies: ["MTLayout", "GestureCore"]),
+        .executableTarget(name: "EdgeSwipe", dependencies: ["GestureCore", "PrivateMac", "Sparkle"],
+            linkerSettings: [.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"])])
     ]
 )

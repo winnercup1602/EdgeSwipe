@@ -1,28 +1,44 @@
 # Release process
 
-The MacBook release contains volume control, built-in display brightness, trackpad gestures, and per-device haptics. The `experimental/external-displays` branch retains the earlier external display implementation.
-
 ## Validate a candidate
 
-1. Update `CFBundleShortVersionString` and increment `CFBundleVersion` in `Info.plist`. Keep the bundle identifier `io.github.winnercup1602.edgeswipe` consistent.
-2. Run `./test.sh` and a release build. Run `swift run EdgeSwipe --probe` on the target MacBook. Add `--round-trip` to check the normal control paths, brightness cancellation, and restoration. The brightness round trip runs when its initial value is on a system keyboard step so the same key path can restore it precisely.
-3. On a MacBook with its built-in display only, verify both edges, directions, system indicators, and haptic strength on each supported trackpad. Check both edge mappings and preference retention after a restart. Check normal pointing, two-finger scrolling, clicks, pause and resume, permission changes, sleep and wake, and Bluetooth reconnection. The pointer must release when input ends or is interrupted.
-4. Install the packaged app into Applications and repeat the gesture checks through the menu bar app. Record the hardware and OS version tested in the release notes.
+1. Increment `CFBundleVersion` and update `CFBundleShortVersionString` in `Info.plist`. Keep the bundle identifier and `SUPublicEDKey` consistent.
+2. Run `./test.sh`, `./prepare-dependencies.sh`, and `swift run -c debug EdgeSwipe --self-test`.
+3. Run `swift run -c debug EdgeSwipe --probe` for read-only hardware checks. Add `--round-trip` to test normal/fine volume and built-in brightness, cancellation, and keyboard backlight changes with restoration. Built-in round trips require an initial keyboard-grid level.
+4. Check the actual menu-bar app on each supported trackpad: four edges, taps, haptic strength, pointer release, typing/multitouch rejection, app exclusions, pause/resume, permission changes, sleep/wake and Bluetooth reconnection. Verify each display backlight separately. See [verification scope](FEATURES.md#verification).
 
-## Ad-hoc signed distribution
-
-Build a free downloadable DMG with an Applications folder shortcut.
+## Build a free DMG
 
 ```sh
-./build-dmg.sh --local dist/EdgeSwipe-0.3.0-arm64.dmg
-shasum -a 256 dist/EdgeSwipe-0.3.0-arm64.dmg > dist/SHA256SUMS
+./build-dmg.sh --local dist/EdgeSwipe-0.4.0-arm64.dmg
+shasum -a 256 dist/EdgeSwipe-0.4.0-arm64.dmg > dist/SHA256SUMS
 ```
 
-Upload the DMG and checksum to the matching Git tag. State the ad-hoc signing status and link to Apple's [first-launch approval guide](https://support.apple.com/guide/mac-help/open-a-mac-app-from-an-unknown-developer-mh40616/mac). Ad-hoc signed updates can require renewing macOS privacy permissions.
+`build-app.sh` downloads the pinned Sparkle binary from its official release, verifies SHA-256, embeds the framework, and validates nested signatures. Runtime files never depend on the build directory.
+
+Upload the DMG and checksum to its matching Git tag. State that the build is ad-hoc signed and not notarized, with Apple's [first-launch approval guide](https://support.apple.com/en-us/102445). Ad-hoc updates may require renewing macOS privacy permissions.
+
+## Sign automatic updates
+
+Sparkle starts with version 0.4.0. Users of 0.3.0 install the new DMG manually once.
+
+The publisher's private key is stored at `~/Library/Application Support/EdgeSwipe/UpdateSigning/ed25519.key` with mode 0600. Keep a private backup outside Git. Only its public key is embedded in `Info.plist`. Ordinary builds and CI do not need the private key.
+
+After building the DMG, prepare the signed feed:
+
+```sh
+./Tools/prepare-update.sh dist/EdgeSwipe-0.4.0-arm64.dmg \
+  https://github.com/winnercup1602/EdgeSwipe/releases/download/v0.4.0/EdgeSwipe-0.4.0-arm64.dmg \
+  dist/appcast.xml
+```
+
+The script checks the archive's bundle identity, version, feed URL and public key; verifies the archive signature; then signs and verifies the feed. It uses checksum-pinned official Sparkle tools. A missing/mismatched publisher key must be recovered before publishing an update.
+
+Publish the release assets first. Replace `appcast.xml` on the `updates` branch with the signed output, commit and push, then download the public feed and verify it again. Do not edit the XML after signing. Feed and archive signatures are both required. Automatic checking is opt-in, and Sparkle profile submission is disabled.
 
 ## Developer ID distribution
 
-A Developer ID Application identity and a notarization profile enable Apple's signed distribution flow. Keep the signing key and notarization credentials in Keychain, and keep the Developer ID team consistent across updates.
+With a Developer ID Application identity and a Keychain notarization profile:
 
 ```sh
 EDGESWIPE_SIGN_IDENTITY='Developer ID Application: Your Name (TEAMID)' \
@@ -30,4 +46,4 @@ EDGESWIPE_NOTARY_PROFILE='edgeswipe-notary' \
 ./build-dmg.sh --release
 ```
 
-The script enables Hardened Runtime, signs the app and disk image, submits the image to Apple, attaches the notarization ticket, and validates the result. On a second Mac or clean account, verify download, installation, first launch, and permission retention before publishing.
+The app build re-signs Sparkle's nested components while preserving their entitlements. The DMG script signs, submits to Apple, attaches the notarization ticket and validates the result. This path requires the publisher's credentials and separate clean-account installation testing.

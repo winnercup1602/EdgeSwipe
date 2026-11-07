@@ -30,7 +30,7 @@ struct GestureCoreTests {
             ("reversal and travel discard at a limit", reversal),
             ("volume and brightness steps and clamps", adjustment),
             ("successful-write feedback and increasing gain", feedback)
-        ]
+        ] + ExpandedGestureTests.cases
         var failures = 0
         for (name, run) in tests {
             do {
@@ -62,8 +62,10 @@ struct GestureCoreTests {
 
     private static func swappedControls() throws {
         for edge in [Edge.left, .right] {
-            try expect(edge.control(swapped: false) == (edge == .left ? .volume : .brightness))
-            try expect(edge.control(swapped: true) == (edge == .left ? .brightness : .volume))
+            var settings = GestureSettings()
+            try expect(settings.action(for: edge) == (edge == .left ? .volume : .brightness))
+            settings.swapped = true
+            try expect(settings.action(for: edge) == (edge == .left ? .brightness : .volume))
             let x = edge == .left ? 0.03 : 0.97
             for direction in [Direction.up, .down] {
                 var gesture = EdgeGesture()
@@ -178,7 +180,7 @@ struct GestureCoreTests {
         var previous: Float = 0
         for level in [0.0625, 0.5625, 1.0] {
             let change = try Adjustment.apply(.volume, .up, read: { level - 0.0625 }, write: { $0 })
-            let gain = change?.hapticGain ?? -1
+            let gain = change.map { HapticStrength.medium.gain(level: $0.level) } ?? -1
             try expect(gain > previous)
             try expect(abs(gain - Float(0.22 + 0.58 * level)) < 1e-6)
             previous = gain

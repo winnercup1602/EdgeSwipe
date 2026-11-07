@@ -1,14 +1,25 @@
 import ApplicationServices
 import Foundation
+import PrivateMac
+import GestureCore
 
 final class PointerFreeze {
     static let holdTimeout: TimeInterval = 0.30
 
     private let corrections = CursorCorrections()
+    private var tapClicks = TapClickFilter()
     private var tap: CFMachPort?
     private var source: CFRunLoopSource?
     var onInterrupt: () -> Void = {}
     var onClick: () -> Void = {}
+    var onTyping: () -> Void = {}
+    var onFlagsChanged: (UInt64) -> Void = { _ in }
+
+    var suppressingTapClick: Bool { tapClicks.suppressingPress(at: ProcessInfo.processInfo.systemUptime) }
+    func suppressTapClick() {
+        guard let point = CGEvent(source: nil)?.location else { return }
+        tapClicks.arm(at: ProcessInfo.processInfo.systemUptime, x: point.x, y: point.y)
+    }
 
     var ready: Bool {
         guard let tap else { return false }
@@ -18,7 +29,7 @@ final class PointerFreeze {
     func start() {
         guard !ready, AXIsProcessTrusted() else { return }
         stop()
-        let events: [CGEventType] = [.mouseMoved, .leftMouseDown, .rightMouseDown, .otherMouseDown]
+        let events: [CGEventType] = [.mouseMoved, .leftMouseDown, .leftMouseUp, .rightMouseDown, .otherMouseDown, .keyDown, .flagsChanged]
         let mask = events.reduce(CGEventMask(0)) { $0 | (1 << $1.rawValue) }
         guard let tap = CGEvent.tapCreate(tap: .cgSessionEventTap, place: .headInsertEventTap,
                                          options: .defaultTap, eventsOfInterest: mask,
@@ -32,6 +43,7 @@ final class PointerFreeze {
 
     func stop() {
         release()
+        tapClicks.reset()
         if let tap { CFMachPortInvalidate(tap) }
         if let source { CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes) }
         tap = nil
@@ -51,14 +63,24 @@ final class PointerFreeze {
     }
 
     fileprivate func handle(_ type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
+        if event.getIntegerValueField(.eventSourceUserData) == SystemInput.eventTag { return Unmanaged.passUnretained(event) }
+        let now = ProcessInfo.processInfo.systemUptime
+        if type == .leftMouseDown, tapClicks.down(at: now, x: event.location.x, y: event.location.y) { return nil }
+        if type == .leftMouseUp, tapClicks.up(at: now) { return nil }
         switch type {
         case .tapDisabledByTimeout, .tapDisabledByUserInput:
             release()
             // Re-create on the regular permission check, outside of the callback.
             DispatchQueue.main.async { [weak self] in self?.onInterrupt() }
         case .leftMouseDown, .rightMouseDown, .otherMouseDown:
+            tapClicks.reset()
             release()
             onClick()
+        case .flagsChanged:
+            onFlagsChanged(event.flags.rawValue)
+        case .keyDown:
+            release()
+            onTyping()
         case .mouseMoved:
             if corrections.intercept(event.location) { return nil }
         default:
