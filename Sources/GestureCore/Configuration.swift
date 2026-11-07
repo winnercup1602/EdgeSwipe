@@ -26,6 +26,7 @@ public enum HapticStrength: String, CaseIterable, Sendable {
     public var title: String {
         switch self { case .off: return "끔"; case .light: return "약하게"; case .medium: return "보통"; case .strong: return "강하게" }
     }
+    // Keep a perceptible floor and increase linearly with the resulting level.
     public func gain(level: Double) -> Float {
         guard self != .off else { return 0 }
         let span: Double = self == .light ? 0.25 : self == .strong ? 0.74 : 0.58

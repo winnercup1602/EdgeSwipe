@@ -1,10 +1,6 @@
 public struct LevelChange: Equatable, Sendable {
     public let level: Double
     public init(level: Double) { self.level = level }
-
-    // The nonzero floor keeps the lowest step perceptible. The gain grows
-    // linearly with the resulting level, independent of direction.
-    public var hapticGain: Float { Float(0.22 + 0.58 * level) }
 }
 
 public enum Adjustment {

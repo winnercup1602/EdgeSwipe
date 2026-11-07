@@ -180,7 +180,7 @@ struct GestureCoreTests {
         var previous: Float = 0
         for level in [0.0625, 0.5625, 1.0] {
             let change = try Adjustment.apply(.volume, .up, read: { level - 0.0625 }, write: { $0 })
-            let gain = change?.hapticGain ?? -1
+            let gain = change.map { HapticStrength.medium.gain(level: $0.level) } ?? -1
             try expect(gain > previous)
             try expect(abs(gain - Float(0.22 + 0.58 * level)) < 1e-6)
             previous = gain

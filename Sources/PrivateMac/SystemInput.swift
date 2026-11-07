@@ -7,7 +7,6 @@ public enum SystemInput {
     public enum MediaKey: Int32 {
         case brightnessUp = 2, brightnessDown = 3
         case playPause = 16, next = 17, previous = 18
-        case keyboardUp = 21, keyboardDown = 22
     }
 
     public static func onMain<T>(_ work: () -> T) -> T {

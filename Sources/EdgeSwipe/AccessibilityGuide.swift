@@ -6,6 +6,7 @@ final class AccessibilityGuide: NSWindowController {
         return "손쉬운 사용"
     }
 
+    private static let hintText = "이미 목록에 있으면 스위치를 켜세요. 승인되면 자동으로 닫힙니다."
     private let openSettings: () -> Bool
     private let locateSettings: () -> NSRect?
     private let settingsIsFrontmost: () -> Bool
@@ -69,7 +70,7 @@ final class AccessibilityGuide: NSWindowController {
         }
         hint.font = .systemFont(ofSize: 11)
         hint.textColor = .secondaryLabelColor
-        hint.stringValue = "이미 목록에 있으면 스위치를 켜세요. 승인되면 자동으로 닫힙니다."
+        hint.stringValue = Self.hintText
         hint.setAccessibilityIdentifier("permissionStatus")
         let stack = NSStackView(views: [header, card, hint])
         stack.orientation = .vertical
@@ -102,7 +103,7 @@ final class AccessibilityGuide: NSWindowController {
         foundSettings = false
         missingSince = nil
         openingDeadline = ProcessInfo.processInfo.systemUptime + 8
-        hint.stringValue = opened ? "이미 목록에 있으면 스위치를 켜세요. 승인되면 자동으로 닫힙니다."
+        hint.stringValue = opened ? Self.hintText
             : "시스템 설정 → 개인정보 보호 및 보안 → \(Self.permissionName)을 여세요."
         let timer = Timer(timeInterval: 0.15, repeats: true) { [weak self] _ in self?.followSettings() }
         timer.tolerance = 0.03
