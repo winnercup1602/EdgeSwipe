@@ -84,6 +84,28 @@ func runAppSelfTests() -> Int32 {
     let selectedCorner = cornerMenu.map { choose("스크린샷 도구 막대", in: $0) } ?? false
     check("corner menu changes only the selected corner", selectedCorner && menuPreferences.settings.corners[.bottomRight] == .screenshot
         && menuPreferences.settings.corners[.topLeft] == .off)
+
+    let cardSize = NSSize(width: 360, height: 136)
+    let screen = NSRect(x: 0, y: 0, width: 1440, height: 900)
+    let settings = NSRect(x: 300, y: 300, width: 680, height: 550)
+    let below = PermissionCardLayout.frame(below: settings, cardSize: cardSize, screens: [screen])
+    let leftScreen = NSRect(x: -1600, y: 100, width: 1600, height: 900)
+    let leftSettings = NSRect(x: -1200, y: 110, width: 680, height: 550)
+    let clamped = PermissionCardLayout.frame(below: leftSettings, cardSize: cardSize, screens: [screen, leftScreen])
+    check("permission card stays below Settings and within the matching display",
+          below.maxY == settings.minY - 8 && screen.contains(below) && leftScreen.contains(clamped))
+
+    var openCount = 0
+    let guide = AccessibilityGuide(openSettings: { openCount += 1; return true }, locateSettings: { settings },
+                                   settingsIsFrontmost: { true })
+    guide.present(granted: false)
+    guide.refresh(granted: false)
+    let visibleBeforeGrant = guide.isTracking && guide.window?.isVisible == true && guide.window?.canBecomeKey == false
+    guide.refresh(granted: true)
+    let closedAfterGrant = !guide.isTracking && guide.window?.isVisible == false
+    guide.present(granted: true)
+    check("permission grant closes the card and stops tracking without another click",
+          visibleBeforeGrant && closedAfterGrant && !guide.isTracking && guide.window?.isVisible == false && openCount == 2)
     return failures == 0 ? 0 : 1
 }
 #endif

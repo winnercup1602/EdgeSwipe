@@ -6,148 +6,212 @@ final class AccessibilityGuide: NSWindowController {
         return "손쉬운 사용"
     }
 
-    private let status = NSTextField(wrappingLabelWithString: "")
-    private let settingsButton = NSButton(title: "설정 열기", target: nil, action: nil)
-    private let closeButton = NSButton(title: "나중에", target: nil, action: nil)
-    private var settingsOpenFailed = false
+    private let openSettings: () -> Bool
+    private let locateSettings: () -> NSRect?
+    private let settingsIsFrontmost: () -> Bool
+    private let hint = NSTextField(wrappingLabelWithString: "")
+    private var timer: Timer?
+    private var foundSettings = false
+    private var missingSince: TimeInterval?
+    private var openingDeadline = 0.0
+    private var dragging = false
+    private(set) var isTracking = false
 
-    init() {
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 440, height: 500),
-                              styleMask: [.titled, .closable], backing: .buffered, defer: false)
-        window.title = "EdgeSwipe · 권한 안내"
-        window.isReleasedWhenClosed = false
-        window.level = .floating
-        window.hidesOnDeactivate = false
-        super.init(window: window)
+    init(openSettings: @escaping () -> Bool = {
+        let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!
+        return NSWorkspace.shared.open(url)
+    }, locateSettings: @escaping () -> NSRect? = SettingsWindowAnchor.frame,
+         settingsIsFrontmost: @escaping () -> Bool = {
+             NSWorkspace.shared.frontmostApplication?.bundleIdentifier == SettingsWindowAnchor.bundleIdentifier
+         }) {
+        self.openSettings = openSettings
+        self.locateSettings = locateSettings
+        self.settingsIsFrontmost = settingsIsFrontmost
+        let panel = PermissionCardPanel(contentRect: NSRect(x: 0, y: 0, width: 360, height: 136),
+                                        styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        panel.title = "EdgeSwipe · 권한 설정"
+        panel.isReleasedWhenClosed = false
+        panel.isFloatingPanel = true
+        panel.level = .floating
+        panel.hidesOnDeactivate = false
+        panel.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.hasShadow = true
+        super.init(window: panel)
 
-        let appURL = Bundle.main.bundleURL
-        let icon = DraggableAppIcon(appURL: appURL)
-        let title = label("스와이프를 시작하기 전에", size: 22, weight: .semibold)
-        let subtitle = label("스와이프 중 커서를 고정하려면\n‘\(Self.permissionName)’ 권한이 필요합니다.", color: .secondaryLabelColor)
-        let dragHint = label("이 앱 아이콘을 설정 목록으로 드래그하세요", size: 12, color: .secondaryLabelColor)
-        let steps = label("1. 아래 버튼으로 권한 설정을 여세요.\n2. 위 아이콘을 앱 목록으로 드래그하세요.\n3. EdgeSwipe 옆의 스위치를 켜세요.")
-        steps.alignment = .left
-        let note = label("이미 목록에 있으면 스위치만 켜세요.\n업데이트 후 인식되지 않으면 껐다 켜거나 다시 추가하세요.\n드래그가 안 되면 목록의 + 버튼으로 앱을 추가할 수 있습니다.",
-                         size: 11, color: .secondaryLabelColor)
-        if appURL.pathExtension != "app" {
-            dragHint.stringValue = "설치된 EdgeSwipe.app에서 아이콘을 드래그할 수 있습니다"
+        let background = NSVisualEffectView()
+        background.material = .popover
+        background.blendingMode = .behindWindow
+        background.state = .active
+        background.wantsLayer = true
+        background.layer?.cornerRadius = 14
+        background.layer?.masksToBounds = true
+        panel.contentView = background
+
+        let title = NSTextField(labelWithString: "위의 앱 목록으로 드래그하세요")
+        title.font = .systemFont(ofSize: 12, weight: .semibold)
+        let close = NSButton(image: NSImage(systemSymbolName: "xmark", accessibilityDescription: "권한 안내 닫기")!,
+                             target: self, action: #selector(dismiss))
+        close.isBordered = false
+        close.contentTintColor = .secondaryLabelColor
+        close.setAccessibilityIdentifier("closePermissionGuide")
+        let header = NSStackView(views: [title, NSView(), close])
+        header.orientation = .horizontal
+
+        let card = DraggableAppCard(appURL: Bundle.main.bundleURL)
+        card.onDrag = { [weak self] dragging in
+            guard let self else { return }
+            self.dragging = dragging
+            self.window?.ignoresMouseEvents = dragging
+            self.window?.alphaValue = dragging ? 0.7 : 1
+            if !dragging { self.followSettings() }
         }
-
-        status.font = .systemFont(ofSize: 12)
-        status.alignment = .center
-        status.setAccessibilityIdentifier("permissionStatus")
-        settingsButton.target = self
-        settingsButton.action = #selector(openSettings)
-        settingsButton.bezelStyle = .rounded
-        settingsButton.setAccessibilityIdentifier("openAccessibilitySettings")
-        closeButton.target = self
-        closeButton.action = #selector(dismissGuide)
-        closeButton.bezelStyle = .rounded
-        closeButton.setAccessibilityIdentifier("closePermissionGuide")
-        let buttons = NSStackView(views: [closeButton, settingsButton])
-        buttons.orientation = .horizontal
-        buttons.spacing = 12
-
-        let stack = NSStackView(views: [title, subtitle, icon, dragHint, steps, note, status, buttons])
+        hint.font = .systemFont(ofSize: 11)
+        hint.textColor = .secondaryLabelColor
+        hint.stringValue = "이미 목록에 있으면 스위치를 켜세요. 승인되면 자동으로 닫힙니다."
+        hint.setAccessibilityIdentifier("permissionStatus")
+        let stack = NSStackView(views: [header, card, hint])
         stack.orientation = .vertical
-        stack.alignment = .centerX
-        stack.spacing = 16
-        stack.setCustomSpacing(6, after: icon)
+        stack.alignment = .leading
+        stack.spacing = 9
         stack.translatesAutoresizingMaskIntoConstraints = false
-        let content = NSView()
-        content.addSubview(stack)
-        window.contentView = content
+        background.addSubview(stack)
         NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 28),
-            stack.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -28),
-            stack.topAnchor.constraint(equalTo: content.topAnchor, constant: 28),
-            stack.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -24),
-            icon.widthAnchor.constraint(equalToConstant: 88),
-            icon.heightAnchor.constraint(equalToConstant: 88),
-            steps.widthAnchor.constraint(equalTo: stack.widthAnchor),
-            note.widthAnchor.constraint(equalTo: stack.widthAnchor),
-            status.widthAnchor.constraint(equalTo: stack.widthAnchor)
+            stack.leadingAnchor.constraint(equalTo: background.leadingAnchor, constant: 14),
+            stack.trailingAnchor.constraint(equalTo: background.trailingAnchor, constant: -14),
+            stack.topAnchor.constraint(equalTo: background.topAnchor, constant: 12),
+            stack.bottomAnchor.constraint(equalTo: background.bottomAnchor, constant: -12),
+            header.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            card.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            card.heightAnchor.constraint(equalToConstant: 48),
+            hint.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            close.widthAnchor.constraint(equalToConstant: 18),
+            close.heightAnchor.constraint(equalToConstant: 18)
         ])
-        window.setContentSize(NSSize(width: 440, height: stack.fittingSize.height + 52))
-        window.center()
+        panel.setContentSize(NSSize(width: 360, height: stack.fittingSize.height + 24))
     }
 
     required init?(coder: NSCoder) { return nil }
 
     func present(granted: Bool) {
-        refresh(granted: granted)
-        showWindow(nil)
-        window?.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
+        close()
+        let opened = openSettings()
+        guard !granted else { return }
+        isTracking = true
+        foundSettings = false
+        missingSince = nil
+        openingDeadline = ProcessInfo.processInfo.systemUptime + 8
+        hint.stringValue = opened ? "이미 목록에 있으면 스위치를 켜세요. 승인되면 자동으로 닫힙니다."
+            : "시스템 설정 → 개인정보 보호 및 보안 → \(Self.permissionName)을 여세요."
+        let timer = Timer(timeInterval: 0.15, repeats: true) { [weak self] _ in self?.followSettings() }
+        timer.tolerance = 0.03
+        self.timer = timer
+        RunLoop.main.add(timer, forMode: .common)
+        followSettings()
     }
 
     func refresh(granted: Bool) {
-        status.stringValue = granted ? "✓ 권한이 허용되었습니다."
-            : (settingsOpenFailed ? "설정을 열지 못했습니다. 시스템 설정에서 손쉬운 사용을 여세요." : "권한을 켜면 여기서 자동으로 확인합니다.")
-        status.textColor = granted ? .systemGreen : (settingsOpenFailed ? .systemRed : .secondaryLabelColor)
-        closeButton.title = granted ? "완료" : "나중에"
-        closeButton.keyEquivalent = granted ? "\r" : ""
-        settingsButton.keyEquivalent = granted ? "" : "\r"
+        if granted, isTracking { close() }
     }
 
-    @objc private func openSettings() {
-        if let window, let screen = window.screen ?? NSScreen.main {
-            let frame = screen.visibleFrame
-            window.setFrameOrigin(NSPoint(x: frame.minX + 20, y: max(frame.minY, frame.midY - window.frame.height / 2)))
+    override func close() {
+        timer?.invalidate()
+        timer = nil
+        isTracking = false
+        dragging = false
+        window?.ignoresMouseEvents = false
+        window?.alphaValue = 1
+        super.close()
+    }
+
+    private func followSettings() {
+        guard isTracking, !dragging, let window else { return }
+        let now = ProcessInfo.processInfo.systemUptime
+        if let settings = locateSettings() {
+            foundSettings = true
+            missingSince = nil
+            let frame = PermissionCardLayout.frame(below: settings, cardSize: window.frame.size,
+                                                   screens: NSScreen.screens.map(\.visibleFrame))
+            if window.frame != frame { window.setFrame(frame, display: true) }
+            if settingsIsFrontmost() { window.orderFrontRegardless() }
+            else { window.orderOut(nil) }
+        } else if foundSettings {
+            // Opening another Settings pane can briefly replace its window.
+            window.orderOut(nil)
+            if missingSince == nil { missingSince = now }
+            if now - (missingSince ?? now) > 1 { close() }
+        } else if now >= openingDeadline {
+            // Do not leave a detached helper floating over unrelated apps.
+            close()
         }
-        let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!
-        settingsOpenFailed = !NSWorkspace.shared.open(url)
-        if settingsOpenFailed { refresh(granted: false) }
     }
 
-    @objc private func dismissGuide() { close() }
-
-    private func label(_ text: String, size: CGFloat = 13, weight: NSFont.Weight = .regular,
-                       color: NSColor = .labelColor) -> NSTextField {
-        let label = NSTextField(wrappingLabelWithString: text)
-        label.font = .systemFont(ofSize: size, weight: weight)
-        label.textColor = color
-        label.alignment = .center
-        return label
-    }
+    @objc private func dismiss() { close() }
 }
 
-private final class DraggableAppIcon: NSImageView, NSDraggingSource {
+private final class PermissionCardPanel: NSPanel {
+    override var canBecomeKey: Bool { false }
+    override var canBecomeMain: Bool { false }
+}
+
+private final class DraggableAppCard: NSView, NSDraggingSource {
     private let appURL: URL
     private var mouseDownEvent: NSEvent?
+    var onDrag: (Bool) -> Void = { _ in }
 
     init(appURL: URL) {
         self.appURL = appURL
         super.init(frame: .zero)
-        image = NSWorkspace.shared.icon(forFile: appURL.path)
-        imageScaling = .scaleProportionallyUpOrDown
-        toolTip = "EdgeSwipe.app을 권한 설정의 앱 목록으로 드래그"
-        setAccessibilityLabel("EdgeSwipe 앱 아이콘, 권한 설정의 앱 목록으로 드래그")
-        setAccessibilityIdentifier("draggableAppIcon")
+        wantsLayer = true
+        layer?.backgroundColor = NSColor.controlBackgroundColor.withAlphaComponent(0.6).cgColor
+        layer?.cornerRadius = 8
+        let icon = NSImageView(image: NSWorkspace.shared.icon(forFile: appURL.path))
+        icon.imageScaling = .scaleProportionallyUpOrDown
+        let title = NSTextField(labelWithString: "EdgeSwipe")
+        title.font = .systemFont(ofSize: 13, weight: .semibold)
+        let arrow = NSImageView(image: NSImage(systemSymbolName: "arrow.up", accessibilityDescription: nil)!)
+        arrow.contentTintColor = .secondaryLabelColor
+        let row = NSStackView(views: [icon, title, NSView(), arrow])
+        row.orientation = .horizontal
+        row.alignment = .centerY
+        row.spacing = 10
+        row.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(row)
+        NSLayoutConstraint.activate([
+            row.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
+            row.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
+            row.centerYAnchor.constraint(equalTo: centerYAnchor),
+            icon.widthAnchor.constraint(equalToConstant: 36), icon.heightAnchor.constraint(equalToConstant: 36)
+        ])
+        setAccessibilityElement(true)
+        setAccessibilityRole(.image)
+        setAccessibilityLabel("EdgeSwipe 앱 카드, 위의 권한 목록으로 드래그")
+        setAccessibilityIdentifier("draggableAppCard")
+        toolTip = "EdgeSwipe.app을 위의 권한 목록으로 드래그"
     }
 
     required init?(coder: NSCoder) { return nil }
-
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
-
+    override func hitTest(_ point: NSPoint) -> NSView? { super.hitTest(point) == nil ? nil : self }
     override func mouseDown(with event: NSEvent) { mouseDownEvent = event }
-
     override func mouseUp(with event: NSEvent) { mouseDownEvent = nil }
 
     override func mouseDragged(with event: NSEvent) {
-        guard let start = mouseDownEvent, appURL.pathExtension == "app", let image else { return }
+        guard let start = mouseDownEvent, appURL.pathExtension == "app" else { return }
         let delta = NSPoint(x: event.locationInWindow.x - start.locationInWindow.x,
                             y: event.locationInWindow.y - start.locationInWindow.y)
         guard hypot(delta.x, delta.y) >= 4 else { return }
         mouseDownEvent = nil
         let item = NSDraggingItem(pasteboardWriter: appURL as NSURL)
-        item.setDraggingFrame(bounds, contents: image)
-        let session = beginDraggingSession(with: [item], event: start, source: self)
-        session.animatesToStartingPositionsOnCancelOrFail = true
+        let point = convert(event.locationInWindow, from: nil)
+        item.setDraggingFrame(NSRect(x: point.x - 24, y: point.y - 24, width: 48, height: 48),
+                              contents: NSWorkspace.shared.icon(forFile: appURL.path))
+        beginDraggingSession(with: [item], event: start, source: self).animatesToStartingPositionsOnCancelOrFail = true
     }
 
-    func draggingSession(_ session: NSDraggingSession,
-                         sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {
-        context == .outsideApplication ? .copy : []
-    }
+    func draggingSession(_ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation { .copy }
+    func ignoreModifierKeys(for session: NSDraggingSession) -> Bool { true }
+    func draggingSession(_ session: NSDraggingSession, willBeginAt screenPoint: NSPoint) { onDrag(true) }
+    func draggingSession(_ session: NSDraggingSession, endedAt screenPoint: NSPoint, operation: NSDragOperation) { onDrag(false) }
 }

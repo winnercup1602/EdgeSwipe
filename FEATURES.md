@@ -18,7 +18,7 @@
 | Accidental input | Multitouch, palm-sized contacts and recent typing cancel sliders; recognition waits for stable single-finger input. |
 | Per-app pause | Pause in the current app or add apps from a picker; remove entries from the same menu. |
 | Lifecycle | Rediscover trackpads and display backends after wake/reconnection. |
-| Setup | First-run permission guide, What's New, and Reset to Defaults. |
+| Setup | A small drag card follows System Settings and closes when permission is granted. Includes What's New and Reset to Defaults. |
 | Login | Uses macOS Login Items; requires system approval if macOS requests it. |
 | Updates | Sparkle with Ed25519-signed archives and signed feeds. Automatic checking is opt-in. |
 
