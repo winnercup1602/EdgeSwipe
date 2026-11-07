@@ -1,36 +1,5 @@
-import AppKit
 import GestureCore
 import PrivateMac
-
-// A stroke snapshots its app order. Activating an app cannot reorder that
-// same stroke or leave a synthetic Command key held after interruption.
-final class AppCycle {
-    private let applications: [NSRunningApplication]
-    private var index = 0
-
-    init(recent: [pid_t]) {
-        let running = NSWorkspace.shared.runningApplications.filter {
-            $0.activationPolicy == .regular && !$0.isTerminated
-        }
-        let front = NSWorkspace.shared.frontmostApplication?.processIdentifier
-        let order = [front].compactMap { $0 } + recent
-        applications = running.sorted {
-            let lhs = order.firstIndex(of: $0.processIdentifier) ?? Int.max
-            let rhs = order.firstIndex(of: $1.processIdentifier) ?? Int.max
-            return lhs == rhs ? $0.processIdentifier < $1.processIdentifier : lhs < rhs
-        }
-    }
-
-    func step(_ direction: Direction) -> Bool {
-        guard applications.count > 1 else { return false }
-        for _ in applications.indices {
-            index = (index + direction.rawValue + applications.count) % applications.count
-            let app = applications[index]
-            if !app.isTerminated { return app.activate(options: []) }
-        }
-        return false
-    }
-}
 
 final class NativeActions {
     // Accessed only from the serial control queue.
@@ -52,11 +21,13 @@ final class NativeActions {
         return LevelChange(level: 0.5)
     }
 
-    static func step(_ action: GestureAction, _ direction: Direction, apps: AppCycle?, whileValid: () -> Bool) throws -> LevelChange? {
+    static func step(_ action: GestureAction, _ direction: Direction, apps: AppSwitcher?, whileValid: () -> Bool) throws -> LevelChange? {
         guard whileValid() else { throw ControlFailure.cancelled }
         let accepted: Bool
         switch action {
-        case .switchApps: accepted = apps?.step(direction) ?? false
+        case .switchApps:
+            guard apps?.step(forward: direction == .up) == true else { throw ControlFailure.inputUnavailable }
+            accepted = true
         case .scrubVideo: accepted = SystemInput.key(direction == .up ? 124 : 123, whileValid: whileValid)
         case .media: accepted = SystemInput.media(direction == .up ? .next : .previous, whileValid: whileValid)
         default: return nil

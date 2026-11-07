@@ -22,8 +22,51 @@ struct ExpandedGestureTests {
         ("fine adjustment uses quarter-sized steps", fine),
         ("hold key and independent edge action configuration", configuration),
         ("hold toggle latches only on a chosen key press", keyToggle),
-        ("recognized taps consume only their nearby native click pair", tapClicks)
+        ("recognized taps consume only their nearby native click pair", tapClicks),
+        ("native app switcher holds Command across forward and reverse steps", appSwitching),
+        ("app switching commits on lift and cancels safely on interruption", appSwitchFinish),
+        ("missing contact frames release app-switch keys and cannot reopen", appSwitchTimeout)
     ]
+    static func appSwitching() throws {
+        var switcher = AppSwitchGesture()
+        try check(switcher.step(forward: true, at: 1) == [.commandDown, .next])
+        try check(switcher.renew(at: 1.1).isEmpty)
+        try check(switcher.step(forward: false, at: 1.2) == [.previous])
+        try check(switcher.step(forward: true, at: 1.3) == [.next])
+        try check(switcher.finish(commit: true) == [.commandUp])
+        var reverse = AppSwitchGesture()
+        try check(reverse.step(forward: false, at: 2) == [.commandDown, .previous])
+    }
+    static func appSwitchFinish() throws {
+        var untouched = AppSwitchGesture()
+        try check(untouched.finish(commit: false).isEmpty)
+        try check(untouched.step(forward: true, at: 1).isEmpty)
+        var cancelled = AppSwitchGesture()
+        _ = cancelled.step(forward: true, at: 1)
+        try check(cancelled.finish(commit: false) == [.cancel, .commandUp])
+        try check(cancelled.finish(commit: true).isEmpty)
+        try check(cancelled.step(forward: true, at: 1.1).isEmpty)
+        var held = AppSwitchGesture()
+        _ = held.step(forward: true, at: 1)
+        try check(held.finish(commit: true, physicalCommandHeld: true) == [.accept, .commandUp])
+    }
+    static func appSwitchTimeout() throws {
+        var switcher = AppSwitchGesture()
+        _ = switcher.step(forward: true, at: 1)
+        try check(switcher.expire(at: 1.2).isEmpty)
+        _ = switcher.renew(at: 1.3)
+        try check(switcher.expire(at: 1.6).isEmpty)
+        try check(switcher.expire(at: 1.8) == [.cancel, .commandUp])
+        try check(switcher.step(forward: true, at: 1.9).isEmpty)
+        try check(switcher.finish(commit: true).isEmpty)
+        var stale = AppSwitchGesture()
+        _ = stale.step(forward: true, at: 2)
+        try check(stale.renew(at: 3) == [.cancel, .commandUp])
+        var noRenew = AppSwitchGesture()
+        _ = noRenew.step(forward: true, at: 4)
+        try check(noRenew.step(forward: true, at: 4.3) == [.next])
+        try check(noRenew.expire(at: 4.5) == [.cancel, .commandUp])
+    }
     static func horizontal() throws {
         var config = GestureConfiguration(); config.enabledEdges = [.top, .bottom]
         for edge in [Edge.top, .bottom] {

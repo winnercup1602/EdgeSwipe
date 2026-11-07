@@ -38,7 +38,7 @@ final class EdgeSwipeApp: NSObject, NSApplicationDelegate {
         var lastFrame: TimeInterval
         var lastWrite = -Double.infinity
         var target: ControlTarget?
-        var apps: AppCycle?
+        var apps: AppSwitcher?
         var busy = false
         var recognized = false
     }
@@ -82,7 +82,6 @@ final class EdgeSwipeApp: NSObject, NSApplicationDelegate {
     private var controlErrors: [GestureAction: String] = [:]
     private var latestBrightnessStroke: OperationLease?
     private var tapLease: OperationLease?
-    private var recentApps: [pid_t] = []
     private var currentUserApp: NSRunningApplication?
 
     override init() {
@@ -237,16 +236,21 @@ final class EdgeSwipeApp: NSObject, NSApplicationDelegate {
                 case .keyboardBrightness:
                     guard let keyboard else { throw ControlFailure.keyboardUnavailable }
                     session?.target = .keyboard(keyboard)
-                case .switchApps: session?.apps = AppCycle(recent: recentApps)
+                case .switchApps:
+                    guard let apps = AppSwitcher() else { throw ControlFailure.inputUnavailable }
+                    session?.apps = apps
                 default: break
                 }
                 pump()
             } catch { report(error, for: active.action); endStroke() }
         case .ended:
-            if session?.device == device { endStroke(blockContact: false, allowAcceptedBrightnessStep: fingers.isEmpty) }
+            if session?.device == device {
+                endStroke(blockContact: false, allowAcceptedBrightnessStep: fingers.isEmpty, commitAppSwitch: fingers.isEmpty)
+            }
         case .unchanged:
             if session?.device == device, fingers.count == 1 {
                 session?.lastFrame = now
+                session?.apps?.renew()
                 if session?.recognized == true { if session?.settings.freezeCursor == true { pointer.renew() }; pump() }
             }
         }
@@ -338,8 +342,9 @@ final class EdgeSwipeApp: NSObject, NSApplicationDelegate {
         logger.error("Adjustment failed: \(String(describing: error), privacy: .public)")
         updateMenu()
     }
-    private func endStroke(blockContact: Bool = true, allowAcceptedBrightnessStep: Bool = false) {
+    private func endStroke(blockContact: Bool = true, allowAcceptedBrightnessStep: Bool = false, commitAppSwitch: Bool = false) {
         if let active = session {
+            active.apps?.finish(commit: commitAppSwitch)
             if !(allowAcceptedBrightnessStep && active.action == .brightness && active.busy) { active.lease.cancel() }
             if blockContact { inputs[active.device]?.gesture.cancel(); inputs[active.device]?.taps.cancel() }
         }
@@ -392,9 +397,6 @@ final class EdgeSwipeApp: NSObject, NSApplicationDelegate {
         let front = NSWorkspace.shared.frontmostApplication
         if let front, front.bundleIdentifier != Bundle.main.bundleIdentifier {
             currentUserApp = front
-            recentApps.removeAll { $0 == front.processIdentifier }
-            recentApps.insert(front.processIdentifier, at: 0)
-            if recentApps.count > 100 { recentApps.removeLast() }
         }
         let blocked = front?.bundleIdentifier.map { preferences.excludedApps.contains($0) } ?? false
         let changed = blocked != suspension.contains(.excludedApp)
