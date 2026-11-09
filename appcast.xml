@@ -6,15 +6,15 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
     <link>https://github.com/winnercup1602/EdgeSwipe/releases</link>
     <description>Signed EdgeSwipe releases</description>
     <item>
-      <title>EdgeSwipe 0.4.0</title>
-      <pubDate>Sat, 07 Nov 2026 17:44:21 +0000</pubDate>
-      <sparkle:version>18</sparkle:version>
-      <sparkle:shortVersionString>0.4.0</sparkle:shortVersionString>
+      <title>EdgeSwipe 0.4.1</title>
+      <pubDate>Mon, 09 Nov 2026 12:10:21 +0000</pubDate>
+      <sparkle:version>19</sparkle:version>
+      <sparkle:shortVersionString>0.4.1</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-      <enclosure url="https://github.com/winnercup1602/EdgeSwipe/releases/download/v0.4.0/EdgeSwipe-0.4.0-arm64.dmg" length="2541239" type="application/octet-stream" sparkle:edSignature="Nm5tNBFfo4ngJ1cXltGE8p1FJJlC66GcENNpmlGQhqaoN27zJKW/p+zRm7usVfddSm2WeZjjx0lgJ3rTzu4ABw=="></enclosure>
+      <enclosure url="https://github.com/winnercup1602/EdgeSwipe/releases/download/v0.4.1/EdgeSwipe-0.4.1-arm64.dmg" length="2571113" type="application/octet-stream" sparkle:edSignature="99I3/7SZSMr4j0WtW+i9DIJHN/WXUxsP7ZB3IrD4ZGzJJjmj+c8Xm7kpFWvI5wW81Q7sORPM1IKyVYBzqolqDw=="></enclosure>
     </item>
   </channel>
 </rss><!-- sparkle-signatures:
-edSignature: Q4TL+/ZoJ4YSwe6JFWt9vJTHyHTZWQyUm6wbyL8Bv7h1zQBvNbyucXwzC0Vtx6DtkOevoBEoA5xfGejUzHQhDg==
+edSignature: F7QgsOj74fCzO5SdYxpmRueWI/cUYoO6FXAutQkxTjPkYY6AnoL/bQVqTSUh2W2IBAirMSo/I1VWZwBVXEzpAA==
 length: 1165
 -->
