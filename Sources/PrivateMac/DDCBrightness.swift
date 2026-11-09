@@ -49,12 +49,14 @@ public final class DDCBrightness {
     }
 
     public enum Failure: Error, CustomStringConvertible {
-        case unavailable, unchanged
+        case unavailable, unchanged, unconfirmed, cancelled
 
         public var description: String {
             switch self {
             case .unavailable: return "모니터가 DDC/CI 밝기 읽기 요청에 응답하지 않음"
-            case .unchanged: return "모니터가 DDC/CI 밝기 변경을 확인하지 않음"
+            case .unchanged: return "모니터가 DDC/CI 밝기 값을 변경하지 않음"
+            case .unconfirmed: return "DDC/CI 밝기 변경 결과를 읽을 수 없음"
+            case .cancelled: return "조절 취소됨"
             }
         }
     }
@@ -81,7 +83,7 @@ public final class DDCBrightness {
         throw Failure.unavailable
     }
 
-    public func write(_ level: Double, from previous: Reading) throws -> Reading {
+    public func write(_ level: Double, from previous: Reading, whileValid: () -> Bool = { true }) throws -> Reading {
         guard level.isFinite, (0...1).contains(level), previous.maximum > 0 else { throw Failure.unavailable }
         let requested = UInt16((level * Double(previous.maximum)).rounded())
         if requested == previous.current { return previous }
@@ -89,12 +91,18 @@ public final class DDCBrightness {
         packet.append(packet.reduce(0x6E ^ 0x51, ^))
         for _ in 0..<2 {
             usleep(10_000)
+            guard whileValid() else { throw Failure.cancelled }
             guard transfer(api.write, bytes: &packet) == 0 else { continue }
             usleep(50_000)
-            if let actual = try? read(), actual.maximum == previous.maximum, actual.current == requested {
+            if let actual = try? read(), actual.maximum == previous.maximum, actual.current != previous.current {
                 return actual
             }
         }
+        // Only fall back to software if a fresh reply confirms the hardware
+        // did not change. A timed-out write may already have taken effect.
+        guard whileValid() else { throw Failure.cancelled }
+        guard let actual = try? read(), actual.maximum == previous.maximum else { throw Failure.unconfirmed }
+        if actual.current != previous.current { return actual }
         throw Failure.unchanged
     }
 
@@ -104,12 +112,18 @@ public final class DDCBrightness {
         }
     }
 
-    private static func externalProxy(for location: String) -> io_service_t? {
+    public static func isDirectLocation(_ location: String) -> Bool { port(for: location) != nil }
+
+    private static func port(for location: String) -> (prefix: String, endpoint: String)? {
         let components = location.split(separator: "/")
-        guard components.count >= 3, let port = components.dropLast().last?.split(separator: "@").first,
+        guard components.count >= 3, components.first == "IOService:",
+              let port = components.dropLast().last?.split(separator: "@").first,
               ["AppleCLCD2", "IOMobileFramebufferShim"].contains(components.last) else { return nil }
-        let prefix = components.dropLast(2).joined(separator: "/") + "/"
-        let endpoint = "\(port):dcpav-service-epic:"
+        return (components.dropLast(2).joined(separator: "/") + "/", "\(port):dcpav-service-epic:")
+    }
+
+    private static func externalProxy(for location: String) -> io_service_t? {
+        guard let (prefix, endpoint) = port(for: location) else { return nil }
         var iterator: io_iterator_t = 0
         guard IOServiceGetMatchingServices(kIOMainPortDefault, IOServiceMatching("DCPAVServiceProxy"),
                                            &iterator) == KERN_SUCCESS else { return nil }

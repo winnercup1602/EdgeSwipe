@@ -6,6 +6,7 @@ import PrivateMac
 
 enum ControlFailure: Error, CustomStringConvertible {
     case audioUnavailable
+    case volumeKeyUnconfirmed
     case inputUnavailable
     case displayUnavailable(String)
     case keyboardUnavailable
@@ -21,6 +22,7 @@ enum ControlFailure: Error, CustomStringConvertible {
         case .displayUnavailable(let name): return "\(name) 백라이트 경로 없음"
         case .keyboardUnavailable: return "키보드 백라이트를 사용할 수 없음"
         case .audioUnavailable: return "기본 출력 장치의 볼륨을 조절할 수 없음"
+        case .volumeKeyUnconfirmed: return "시스템 볼륨 키 입력 후 변경을 확인하지 못함"
         case .brightnessKeyUnavailable: return "밝기 키 입력을 사용할 수 없음 · 손쉬운 사용 권한 확인"
         case .brightnessKeyUnconfirmed: return "시스템 밝기 키 입력 후 변경을 확인하지 못함"
         case .targetChanged: return "조절 대상이 바뀜"
@@ -50,6 +52,24 @@ struct AudioOutput {
         guard try Self.defaultID() == id else { throw ControlFailure.targetChanged }
         if canSetMute, try isMuted() { return 0 }
         return Double(try rawVolume())
+    }
+
+    func adjust(_ direction: Direction, step: Double, whileValid: () -> Bool) throws -> LevelChange? {
+        let current = try read()
+        return try Adjustment.apply(.volume, direction, step: step, read: { current }) { _ in
+            let key: SystemInput.MediaKey = direction == .up ? .volumeUp : .volumeDown
+            guard SystemInput.media(key, precise: step < Control.stepSize, whileValid: {
+                whileValid() && (try? Self.defaultID()) == id
+            }) else {
+                guard whileValid() else { throw ControlFailure.cancelled }
+                guard try Self.defaultID() == id else { throw ControlFailure.targetChanged }
+                throw ControlFailure.inputUnavailable
+            }
+            return try waitForSystemLevel(whileValid: whileValid, failure: .volumeKeyUnconfirmed) {
+                let actual = try read()
+                return (actual - current) * Double(direction.rawValue) > 0.000_01 ? actual : nil
+            }
+        }
     }
 
     func write(_ level: Double) throws {
@@ -155,18 +175,25 @@ struct BuiltInBrightness {
 
     private func confirmSystemKey(from current: Double, direction: Direction, step: Double,
                                   whileValid: () -> Bool) throws -> Double {
-        for _ in 0..<12 {
-            Thread.sleep(forTimeInterval: 0.02)
-            guard whileValid() else { throw ControlFailure.cancelled }
+        try waitForSystemLevel(whileValid: whileValid, failure: .brightnessKeyUnconfirmed) {
             guard BuiltInDisplay.activeID == display else { throw ControlFailure.targetChanged }
-            if let actual = try? native.read(display: display) {
-                let delta = (actual - current) * Double(direction.rawValue)
-                if delta > 0.001, delta <= step + (step < Control.stepSize ? 0.003 : 0.012),
-                   actual >= Control.brightness.minimum - 0.0001 { return actual }
-            }
+            guard let actual = try? native.read(display: display) else { return nil }
+            let delta = (actual - current) * Double(direction.rawValue)
+            guard delta > 0.001, delta <= step + (step < Control.stepSize ? 0.003 : 0.012),
+                  actual >= Control.brightness.minimum - 0.0001 else { return nil }
+            return actual
         }
-        throw ControlFailure.brightnessKeyUnconfirmed
     }
+}
+
+private func waitForSystemLevel(whileValid: () -> Bool, failure: ControlFailure,
+                                readConfirmedLevel: () throws -> Double?) throws -> Double {
+    for _ in 0..<12 {
+        Thread.sleep(forTimeInterval: 0.02)
+        guard whileValid() else { throw ControlFailure.cancelled }
+        if let level = try readConfirmedLevel() { return level }
+    }
+    throw failure
 }
 
 enum ControlTarget {
@@ -176,18 +203,14 @@ enum ControlTarget {
     case keyboard(KeyboardBrightness)
 
     var feedbackDisplay: CGDirectDisplayID? {
-        if case .external(let target) = self { return target.screen.info.id }
+        if case .external(let target) = self { return target.feedbackDisplay }
         return nil
     }
 
     func adjust(_ direction: Direction, step: Double = Control.stepSize, whileValid: () -> Bool) throws -> LevelChange? {
         switch self {
         case .volume(let audio):
-            return try Adjustment.apply(.volume, direction, step: step, read: audio.read) { level in
-                guard whileValid() else { throw ControlFailure.cancelled }
-                try audio.write(level)
-                return try audio.read()
-            }
+            return try audio.adjust(direction, step: step, whileValid: whileValid)
         case .brightness(let brightness):
             return try brightness.adjust(direction, step: step, whileValid: whileValid)
         case .external(let target):

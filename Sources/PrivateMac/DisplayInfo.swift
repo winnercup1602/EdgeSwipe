@@ -1,4 +1,4 @@
-import CoreGraphics
+import ApplicationServices
 import Darwin
 import Foundation
 
@@ -14,10 +14,17 @@ public struct DisplayInfo {
     public let id: CGDirectDisplayID
     public let name: String
     public let location: String?
+    private let uuid: CFUUID?
     public var builtIn: Bool { CGDisplayIsBuiltin(id) != 0 }
+    public var isCurrent: Bool {
+        guard CGDisplayIsActive(id) != 0, let uuid,
+              let current = CGDisplayCreateUUIDFromDisplayID(id)?.takeRetainedValue() else { return false }
+        return CFEqual(uuid, current)
+    }
 
     public init(id: CGDirectDisplayID) {
         self.id = id
+        uuid = CGDisplayCreateUUIDFromDisplayID(id)?.takeRetainedValue()
         let dictionary = Self.create?(id)?.takeRetainedValue() as? [String: Any]
         let names = dictionary?["DisplayProductName"] as? [String: String]
         name = names?["en_US"] ?? names?.values.sorted().first

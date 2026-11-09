@@ -5,13 +5,14 @@ import IOKit.hidsystem
 public enum SystemInput {
     public static let eventTag: Int64 = 0x455357495045
     public enum MediaKey: Int32 {
+        case volumeUp = 0, volumeDown = 1
         case brightnessUp = 2, brightnessDown = 3
         case playPause = 16, next = 17, previous = 18
     }
 
-    public static func onMain<T>(_ work: () -> T) -> T {
-        if Thread.isMainThread { return work() }
-        return DispatchQueue.main.sync(execute: work)
+    public static func onMain<T>(_ work: () throws -> T) rethrows -> T {
+        if Thread.isMainThread { return try work() }
+        return try DispatchQueue.main.sync(execute: work)
     }
 
     @discardableResult

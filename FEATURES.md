@@ -22,7 +22,7 @@
 | Login | Uses macOS Login Items; requires system approval if macOS requests it. |
 | Updates | Sparkle with Ed25519-signed archives and signed feeds. Automatic checking is opt-in. |
 
-Built-in brightness uses standard macOS brightness keys and confirms the result through DisplayServices. External brightness uses confirmed DDC/CI or DisplayLink backlight writes, targeting the screen under the cursor at gesture start. Feedback uses macOS services.
+Built-in brightness uses standard macOS brightness keys and confirms the result through DisplayServices. Direct displays use DDC/CI when available and software dimming otherwise. Brightness keys follow the pointer on supported direct displays, and swipes target the display under the pointer at gesture start. DisplayLink uses confirmed backlight writes.
 
 Three-finger middle click can conflict with macOS three-finger dragging or Look Up. EdgeSwipe leaves those system settings under the user's control. The menu also provides per-app pause.
 
@@ -36,4 +36,4 @@ Local control-path checks on an M2 MacBook Air / macOS 27.2 confirmed normal and
 
 Native app-switcher input checks confirmed app activation and return to the original app, reverse-selection confirmation, cancellation, and release after missing frames. Hardware modifier state stayed separate from the synthetic Command key.
 
-Magic Trackpad and external monitors were not connected during these expanded-version checks. Their new gesture combinations, per-device haptic feel, and external backlight paths require real-device acceptance; software tests are not physical confirmation.
+On a direct BenQ GW2760HS, the software fallback was checked through the swipe adjustment path and normal, repeated and fine brightness key events. The original color curve was restored after the test. Physical Magic Trackpad gestures and the full range of external backlight connections still require hardware validation.

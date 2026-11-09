@@ -14,6 +14,7 @@ final class PointerFreeze {
     var onClick: () -> Void = {}
     var onTyping: () -> Void = {}
     var onFlagsChanged: (UInt64) -> Void = { _ in }
+    var onBrightnessKey: (DisplayBrightnessKey) -> Bool = { _ in false }
 
     var suppressingTapClick: Bool { tapClicks.suppressingPress(at: ProcessInfo.processInfo.systemUptime) }
     func suppressTapClick() {
@@ -29,7 +30,8 @@ final class PointerFreeze {
     func start() {
         guard !ready, AXIsProcessTrusted() else { return }
         stop()
-        let events: [CGEventType] = [.mouseMoved, .leftMouseDown, .leftMouseUp, .rightMouseDown, .otherMouseDown, .keyDown, .flagsChanged]
+        let events: [CGEventType] = [.mouseMoved, .leftMouseDown, .leftMouseUp, .rightMouseDown, .otherMouseDown,
+                                    .keyDown, .flagsChanged, DisplayBrightnessKey.eventType]
         let mask = events.reduce(CGEventMask(0)) { $0 | (1 << $1.rawValue) }
         guard let tap = CGEvent.tapCreate(tap: .cgSessionEventTap, place: .headInsertEventTap,
                                          options: .defaultTap, eventsOfInterest: mask,
@@ -81,6 +83,8 @@ final class PointerFreeze {
         case .keyDown:
             release()
             onTyping()
+        case DisplayBrightnessKey.eventType:
+            if let key = DisplayBrightnessKey(event: event), onBrightnessKey(key) { return nil }
         case .mouseMoved:
             if corrections.intercept(event.location) { return nil }
         default:

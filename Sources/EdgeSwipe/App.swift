@@ -116,8 +116,19 @@ final class EdgeSwipeApp: NSObject, NSApplicationDelegate {
             self?.lastTyping = ProcessInfo.processInfo.systemUptime
             self?.cancelInput()
         }
+        pointer.onBrightnessKey = { [weak self] key in
+            guard let self, self.captureEnabled else { return false }
+            let handled = self.displays.handleKey(key)
+            if handled, key.phase == .down, self.session?.action == .brightness { self.cancelInput() }
+            return handled
+        }
         pointer.onInterrupt = { [weak self] in self?.cancelInput(); self?.checkPermission() }
         displays.onChanged = { [weak self] in self?.updateMenu() }
+        displays.onKeyAdjustment = { [weak self] error in
+            guard let self else { return }
+            if let error { self.report(error, for: .brightness) }
+            else if self.controlErrors.removeValue(forKey: .brightness) != nil { self.updateMenu() }
+        }
         displays.onAvailabilityChange = { [weak self] in
             guard let self, !self.preferences.paused, self.suspension.isEmpty else { return }
             self.cancelInput()
@@ -152,7 +163,7 @@ final class EdgeSwipeApp: NSObject, NSApplicationDelegate {
         cancelInput()
         pointer.stop()
         trackpads.stop()
-        displays.stop()
+        displays.stop(restoreSoftware: true)
         observers.forEach { NSWorkspace.shared.notificationCenter.removeObserver($0) }
         if let screenObserver { NotificationCenter.default.removeObserver(screenObserver) }
     }
@@ -304,7 +315,11 @@ final class EdgeSwipeApp: NSObject, NSApplicationDelegate {
         if tracking { session?.busy = false }
         switch result {
         case .success(let change):
-            if controlErrors.removeValue(forKey: active.action) != nil { updateMenu() }
+            var menuChanged = controlErrors.removeValue(forKey: active.action) != nil
+            if case .external(let target) = active.target, displays.updatePath(for: target) {
+                menuChanged = true
+            }
+            if menuChanged { updateMenu() }
             if let change {
                 if let display = active.target?.feedbackDisplay { feedback.show(change.level, on: display) }
                 if tracking { tick(device: active.device, level: change.level, strength: active.settings.haptics) }
@@ -419,6 +434,7 @@ final class EdgeSwipeApp: NSObject, NSApplicationDelegate {
         if !trusted || !postingAllowed { cancelInput(); pointer.stop() }
         else if !preferences.paused, suspension.isEmpty { pointer.start() }
         captureEnabled = trusted && postingAllowed && !preferences.paused && suspension.isEmpty && pointer.ready
+        if previous.2 && !captureEnabled { displays.cancelKeys() }
         inputMonitoringNeeded = trusted && postingAllowed && !captureEnabled && !preferences.paused && suspension.isEmpty && !CGPreflightListenEventAccess()
         accessibilityGuide?.refresh(granted: trusted && postingAllowed)
         if previous != (trusted, postingAllowed, captureEnabled, inputMonitoringNeeded) { updateMenu() }

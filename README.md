@@ -2,7 +2,7 @@
 
 A free MacBook menu bar app for trackpad edge controls: volume, display and keyboard brightness, app switching, video seeking and media. Includes configurable taps and haptics.
 
-Supports built-in Force Touch and Magic Trackpad on Apple Silicon, macOS 14+. External brightness requires DDC/CI or a compatible DisplayLink Manager connection.
+Supports built-in Force Touch and Magic Trackpad on Apple Silicon, macOS 14+. External brightness uses DDC/CI, software dimming on direct displays, or a compatible DisplayLink connection.
 
 ## Install
 

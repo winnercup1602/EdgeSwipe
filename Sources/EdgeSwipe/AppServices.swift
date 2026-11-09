@@ -46,13 +46,12 @@ final class WhatsNewWindow: NSWindowController {
         window.title = "EdgeSwipe · 새로운 기능"
         window.isReleasedWhenClosed = false
         super.init(window: window)
-        let title = NSTextField(labelWithString: "네 방향으로 더 많은 제어")
+        let title = NSTextField(labelWithString: "화면 밝기 조절 개선")
         title.font = .systemFont(ofSize: 22, weight: .semibold)
         let text = NSTextField(wrappingLabelWithString:
-            "• 위·아래 가장자리로 앱 전환, 동영상 탐색, 미디어와 키보드 밝기 조절\n\n" +
-            "• 모서리 더블 탭과 세 손가락 중간 클릭\n\n" +
-            "• 정밀 단계, 햅틱 강도, 가장자리 너비, 앱별 일시정지\n\n" +
-            "• 커서가 있는 화면의 밝기와 로그인 실행·자동 업데이트")
+            "• 직결 모니터는 DDC/CI로 조절합니다. DDC/CI를 사용할 수 없으면 화면 밝기를 소프트웨어로 보정합니다.\n\n" +
+            "• 밝기 키로 커서가 있는 직결 모니터를 조절할 수 있습니다. 내장 화면은 macOS 기본 밝기 제어를 사용합니다.\n\n" +
+            "• 볼륨 스와이프에도 macOS 기본 음량 표시가 뜹니다.")
         text.font = .systemFont(ofSize: 13)
         let button = NSButton(title: "계속", target: self, action: #selector(dismiss))
         button.bezelStyle = .rounded
